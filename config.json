@@ -1,0 +1,14 @@
+{
+    "hash_file": "hashes/hashes.txt",
+    "potfile": "/opt/hashwrap/potfile.pot",
+    "hashcat_path": "hashcat",
+    "message_interval": 10,
+    "combinations": [
+        {"wordlist": "wordlists/hk.txt", "ruleset": null},
+        {"wordlist": "wordlists/hashcat.txt", "ruleset": null},
+        {"wordlist": "wordlists/ignis.txt", "ruleset": "rules/best64.rule"},
+        {"wordlist": "wordlists/top1.txt", "ruleset": "rules/leetspeak.rule"},
+        {"wordlist": "wordlists/top1.txt", "ruleset": "rules/best64.rule"},
+        {"wordlist": "wordlists/hashcat.txt", "ruleset": "rules/leetspeak.rule"}
+    ]
+}
