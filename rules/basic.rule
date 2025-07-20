@@ -1,0 +1,92 @@
+# Basic password mutation rules
+# Append numbers
+$0
+$1
+$2
+$3
+$4
+$5
+$6
+$7
+$8
+$9
+$1$2$3
+$1$2$3$4
+$2$0$2$3
+$2$0$2$4
+$9$9
+$0$0
+$6$9
+$1$1
+$2$2
+$1$2
+
+# Prepend numbers
+^1
+^2
+^0
+^9
+
+# Append special characters
+$!
+$@
+$#
+$$
+$*
+$.
+$?
+
+# Capitalize
+c
+C
+
+# Uppercase
+u
+
+# Reverse
+r
+
+# Duplicate
+d
+
+# Append year patterns
+$2$0$2$3
+$2$0$2$4
+$2$0$2$2
+$2$0$2$1
+$2$0$2$0
+
+# Common substitutions
+so@
+si1
+si!
+se3
+sa@
+sa4
+ss$
+ss5
+so0
+
+# Append common suffixes
+$1$2$3$!
+$1$2$3$@
+$q$w$e$r$t$y
+$!$@$#
+
+# Toggle case
+T0
+T1
+T2
+
+# Delete first/last
+[
+]
+
+# Combinations
+c$1
+c$!
+c$1$2$3
+u$1
+u$!
+c$2$0$2$3
+c$!

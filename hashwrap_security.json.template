@@ -1,0 +1,24 @@
+{
+  "allowed_directories": [
+    ".",
+    "./wordlists",
+    "./rules",
+    "./hashes",
+    "/usr/share/wordlists",
+    "/usr/share/hashcat",
+    "/opt/wordlists"
+  ],
+  "max_file_size": 10737418240,
+  "enable_hot_reload": true,
+  "hot_reload_interval": 5,
+  "security_features": {
+    "validate_paths": true,
+    "validate_hashes": true,
+    "sanitize_commands": true,
+    "secure_temp_files": true
+  },
+  "performance": {
+    "streaming_chunk_size": 1048576,
+    "max_concurrent_attacks": 1
+  }
+}

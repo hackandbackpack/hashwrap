@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+
+# Testing
+test_*.py
+demo_*.py
+*.test
+*.tmp
+sample_hashes.txt
+test_hashes.txt
+
+# Sessions and runtime
+.hashwrap_sessions/
+*.pot
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Security config (use template)
+hashwrap_security.json
+
+# Temporary files
+*.bak
+*.tmp
+temp/
+tmp/
