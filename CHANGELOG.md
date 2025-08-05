@@ -1,5 +1,33 @@
 # Hashwrap Changelog
 
+## v3.0.1 - Compatibility Update (2025-01-14)
+
+### Added
+- Support for 20+ new hash types for hashcat v7.0.0 compatibility
+  - Argon2 variants (argon2i/d/id)
+  - Cryptocurrency wallets (Ethereum, Bitcoin, MetaMask)
+  - Modern encryption (LUKS2, Ansible Vault, ZIP3 AES-256)
+  - Cloud services (Okta, MongoDB SCRAM, Microsoft Online)
+  - Protocols (SNMPv3, OpenSSH keys, GPG keys)
+  - JWT token support
+- Version detection and compatibility checking in resource monitor
+- Detailed COMPATIBILITY.md documentation
+- hashcat version information in system checks
+
+### Updated
+- Hash pattern database expanded from 20 to 40+ formats
+- Resource monitor reports hashcat version and capabilities
+- README includes version compatibility information
+
+### Fixed
+- Ensured full compatibility with hashcat v6.2.6 and v7.0.0
+- Version parsing handles various hashcat version formats
+
+### Compatibility
+- Minimum required: hashcat v6.0.0
+- Tested with: hashcat v6.2.6 (current stable)
+- Future ready: hashcat v7.0.0 (upcoming release)
+
 ## v3.0.0 - Security & Hot-Reload Update
 
 ### 🔒 Security Enhancements

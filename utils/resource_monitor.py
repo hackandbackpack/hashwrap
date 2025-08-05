@@ -113,6 +113,10 @@ class ResourceMonitor:
             )
             version = result.stdout.strip()
             
+            # Parse version number for compatibility checks
+            version_parts = version.replace('v', '').split('.')
+            major_version = int(version_parts[0]) if version_parts else 0
+            
             # Check for OpenCL/CUDA support
             result = subprocess.run(
                 ['hashcat', '-I'],
@@ -129,6 +133,8 @@ class ResourceMonitor:
             return {
                 'available': True,
                 'version': version,
+                'major_version': major_version,
+                'supports_autodetect': major_version >= 7,
                 'devices': devices
             }
         except (subprocess.CalledProcessError, FileNotFoundError):

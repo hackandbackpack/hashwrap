@@ -47,6 +47,35 @@ class HashAnalyzer:
         r'^\$P\$[a-zA-Z0-9./]{31}$': {'name': 'phpBB3/WordPress', 'mode': 400, 'confidence': 1.0},
         r'^\$H\$[a-zA-Z0-9./]{31}$': {'name': 'phpBB3/WordPress (alt)', 'mode': 400, 'confidence': 1.0},
         r'^sha1\$[a-f0-9]{8}\$[a-f0-9]{40}$': {'name': 'Django SHA1', 'mode': 800, 'confidence': 1.0},
+        
+        # New hash types for hashcat v7.0.0
+        # Argon2 variants
+        r'^\$argon2i\$': {'name': 'Argon2i', 'mode': 10900, 'confidence': 1.0},
+        r'^\$argon2d\$': {'name': 'Argon2d', 'mode': 11300, 'confidence': 1.0},
+        r'^\$argon2id\$': {'name': 'Argon2id', 'mode': 11900, 'confidence': 1.0},
+        
+        # Cryptocurrency wallets
+        r'^\$ethereum\$': {'name': 'Ethereum Wallet', 'mode': 15700, 'confidence': 1.0},
+        r'^\$bitcoin\$': {'name': 'Bitcoin Wallet', 'mode': 11300, 'confidence': 1.0},
+        r'^metamask:': {'name': 'MetaMask Wallet', 'mode': 26600, 'confidence': 1.0},
+        
+        # Modern encryption
+        r'^\$luks\$': {'name': 'LUKS2', 'mode': 29543, 'confidence': 1.0},
+        r'^\$ansible\$': {'name': 'Ansible Vault', 'mode': 16900, 'confidence': 1.0},
+        r'^\$zip3\$': {'name': 'ZIP3 AES-256', 'mode': 24700, 'confidence': 1.0},
+        
+        # Cloud/Modern services  
+        r'^\$okta\$': {'name': 'Okta PBKDF2-SHA512', 'mode': 10900, 'confidence': 1.0},
+        r'^\$mongodb-scram\$': {'name': 'MongoDB SCRAM', 'mode': 24700, 'confidence': 1.0},
+        r'^\$msonline\$': {'name': 'Microsoft Online Account', 'mode': 27800, 'confidence': 1.0},
+        
+        # Additional protocols
+        r'^\$snmpv3\$': {'name': 'SNMPv3 HMAC-SHA*-AES*', 'mode': 25000, 'confidence': 1.0},
+        r'^\$ssh\$': {'name': 'OpenSSH Private Key', 'mode': 22921, 'confidence': 1.0},
+        r'^\$gpg\$': {'name': 'GPG Secret Key', 'mode': 17010, 'confidence': 1.0},
+        
+        # JWT tokens
+        r'^ey[A-Za-z0-9-_]+\.ey[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$': {'name': 'JWT Token', 'mode': 16500, 'confidence': 1.0},
     }
     
     def __init__(self):

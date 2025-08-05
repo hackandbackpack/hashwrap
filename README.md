@@ -42,6 +42,11 @@ pip install -r requirements.txt
 # Ubuntu/Debian: apt install hashcat
 # macOS: brew install hashcat
 # Windows: Download from https://hashcat.net/hashcat/
+
+# Hashcat Version Compatibility
+# - Fully compatible with hashcat v6.2.6 (current stable)
+# - Ready for hashcat v7.0.0 with support for new hash types
+# - Minimum supported version: hashcat v6.0.0
 ```
 
 ## Quick Start
