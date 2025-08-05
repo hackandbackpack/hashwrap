@@ -9,6 +9,7 @@
     "/opt/wordlists"
   ],
   "max_file_size": 10737418240,
+  "hashcat_timeout": 3600,
   "enable_hot_reload": true,
   "hot_reload_interval": 5,
   "security_features": {

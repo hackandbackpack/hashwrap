@@ -4,14 +4,17 @@ import threading
 import queue
 from typing import Set, Dict, List, Tuple, Optional
 from datetime import datetime
+from .streaming_hash_processor import StreamingHashProcessor
 
 
 class HashManager:
     """Intelligent hash management with real-time tracking and optimization."""
     
-    def __init__(self, hash_file: str, potfile: str):
+    def __init__(self, hash_file: str, potfile: str, streaming_mode: bool = False, 
+                 max_memory_mb: int = 512):
         self.hash_file = hash_file
         self.potfile = potfile
+        self.streaming_mode = streaming_mode
         self.original_hashes: Set[str] = set()
         self.cracked_hashes: Dict[str, str] = {}  # hash -> plaintext
         self.remaining_hashes: Set[str] = set()
@@ -22,14 +25,28 @@ class HashManager:
         self.hash_lock = threading.Lock()
         self.new_hashes_queue = queue.Queue()
         
+        # Streaming support for large files
+        self.stream_processor = StreamingHashProcessor(max_memory_mb=max_memory_mb) if streaming_mode else None
+        self.total_hash_count = 0  # Track total without loading all into memory
+        
         self._load_initial_state()
         
     def _load_initial_state(self):
         """Load initial hashes and check potfile for already cracked ones."""
         # Load all hashes from file
         if os.path.exists(self.hash_file):
-            with open(self.hash_file, 'r', encoding='utf-8', errors='ignore') as f:
-                self.original_hashes = {line.strip() for line in f if line.strip()}
+            if self.streaming_mode and self.stream_processor:
+                # Streaming mode: count hashes without loading all into memory
+                self.total_hash_count = self.stream_processor.count_hashes(self.hash_file)
+                # Only load a sample for quick analysis
+                for batch in self.stream_processor.stream_hashes(self.hash_file, batch_size=10000):
+                    self.original_hashes.update(batch)
+                    if len(self.original_hashes) >= 100000:  # Limit sample size
+                        break
+            else:
+                # Traditional mode: load all hashes
+                with open(self.hash_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    self.original_hashes = {line.strip() for line in f if line.strip()}
         
         # Load already cracked hashes from potfile
         if os.path.exists(self.potfile):

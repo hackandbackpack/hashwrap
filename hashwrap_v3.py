@@ -340,33 +340,78 @@ class HashwrapV3:
             display_cmd = [self.validator.sanitize_command_argument(arg) for arg in cmd]
             self.display.debug(f"Command: {' '.join(display_cmd)}")
             
-            # Run hashcat
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True,
-                # Security: Don't pass shell=True
-                shell=False,
-                # Limit environment variables
-                env={**os.environ, 'HASHCAT_BRAIN_HOST': 'disabled'}
-            )
+            # Run hashcat with improved timeout handling
+            import signal
+            
+            # Configure timeout from security config
+            timeout_seconds = self.security_config.get('hashcat_timeout', 3600)
+            
+            # Create process with proper group handling for cleanup
+            if sys.platform == 'win32':
+                # Windows: Use job objects for process group
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True,
+                    shell=False,
+                    env={**os.environ, 'HASHCAT_BRAIN_HOST': 'disabled'},
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                )
+            else:
+                # Unix: Use process groups
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True,
+                    shell=False,
+                    env={**os.environ, 'HASHCAT_BRAIN_HOST': 'disabled'},
+                    preexec_fn=os.setsid
+                )
             
             # Monitor progress in background
             monitor_thread = threading.Thread(
                 target=self._monitor_attack_progress,
                 args=(process,),
-                daemon=True
+                daemon=False,  # Changed to non-daemon for proper cleanup
+                name=f"Monitor-{attack.name}"
             )
             monitor_thread.start()
             
-            # Wait for completion with timeout
+            # Wait for completion with improved timeout handling
             try:
-                stdout, stderr = process.communicate(timeout=3600)  # 1 hour timeout
+                stdout, stderr = process.communicate(timeout=timeout_seconds)
             except subprocess.TimeoutExpired:
-                process.kill()
-                stdout, stderr = process.communicate()
-                self.display.warning("Attack timed out after 1 hour")
+                self.display.warning(f"Attack '{attack.name}' timed out after {timeout_seconds} seconds")
+                
+                # Proper process termination
+                if sys.platform == 'win32':
+                    # Windows: Send CTRL_BREAK_EVENT to process group
+                    process.send_signal(signal.CTRL_BREAK_EVENT)
+                    time.sleep(5)  # Give hashcat time to save state
+                    if process.poll() is None:
+                        process.terminate()
+                else:
+                    # Unix: Send SIGTERM to process group
+                    try:
+                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass  # Process already terminated
+                
+                # Wait for process to terminate
+                try:
+                    stdout, stderr = process.communicate(timeout=10)
+                except subprocess.TimeoutExpired:
+                    # Force kill if still running
+                    process.kill()
+                    stdout, stderr = process.communicate()
+                    self.display.error(f"Had to force-kill attack '{attack.name}'")
+            
+            # Ensure monitor thread terminates
+            monitor_thread.join(timeout=5)
+            if monitor_thread.is_alive():
+                self.display.warning("Monitor thread did not terminate cleanly")
             
             # Clean up temp file securely
             if os.path.exists(remaining_file):
