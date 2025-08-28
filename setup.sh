@@ -484,6 +484,32 @@ get_compose_command() {
     fi
 }
 
+# Detect GPU capabilities and choose appropriate configuration
+detect_gpu_capabilities() {
+    print_info "Detecting GPU capabilities..."
+    
+    # Check if NVIDIA GPU is present and accessible
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        if nvidia-smi >/dev/null 2>&1; then
+            print_info "NVIDIA GPU detected, checking Docker integration..."
+            
+            # Test if Docker can access NVIDIA GPUs
+            if docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi >/dev/null 2>&1; then
+                print_success "GPU acceleration available - using GPU configuration"
+                return 0  # GPU mode
+            else
+                print_warning "GPU detected but Docker integration failed - using CPU-only mode"
+            fi
+        else
+            print_info "nvidia-smi present but no GPUs accessible - using CPU-only mode"
+        fi
+    else
+        print_info "No NVIDIA GPU detected - using CPU-only mode"
+    fi
+    
+    return 1  # CPU-only mode
+}
+
 # Start HashWrap services
 start_hashwrap() {
     print_step "Starting HashWrap services"
@@ -491,13 +517,47 @@ start_hashwrap() {
     local compose_cmd
     compose_cmd=$(get_compose_command)
     
-    # Determine compose file to use
+    # Detect GPU capabilities and choose appropriate compose file
     local compose_file=""
-    if [[ -f "docker-compose.simple.yml" ]]; then
-        compose_file="-f docker-compose.simple.yml"
-    elif [[ -f "webapp/docker-compose.yml" ]]; then
+    if detect_gpu_capabilities; then
+        # GPU mode
+        if [[ -f "docker-compose.gpu.yml" ]]; then
+            compose_file="-f docker-compose.gpu.yml"
+            print_success "Using GPU-accelerated configuration"
+        else
+            compose_file="-f docker-compose.simple.yml"
+            print_warning "GPU detected but no GPU compose file found, using default"
+        fi
+    else
+        # CPU-only mode
+        if [[ -f "docker-compose.cpu.yml" ]]; then
+            compose_file="-f docker-compose.cpu.yml"
+            print_success "Using CPU-only configuration"
+        elif [[ -f "docker-compose.simple.yml" ]]; then
+            # Fallback: use simple yml but without GPU sections (handled at runtime)
+            compose_file="-f docker-compose.cpu.yml"
+            print_info "Creating CPU-only configuration from simple template"
+            
+            # Generate CPU-only compose file on the fly if needed
+            if [[ ! -f "docker-compose.cpu.yml" ]]; then
+                generate_cpu_compose_file
+            fi
+        else
+            print_error "No suitable Docker Compose configuration found"
+            exit 1
+        fi
+    fi
+    
+    # Final fallback check for webapp directory
+    if [[ -z "$compose_file" && -f "webapp/docker-compose.yml" ]]; then
         cd webapp
         compose_file="-f docker-compose.yml"
+        print_info "Using webapp Docker Compose configuration"
+    fi
+    
+    if [[ -z "$compose_file" ]]; then
+        print_error "No Docker Compose configuration found"
+        exit 1
     fi
     
     # Build and start services
@@ -505,9 +565,64 @@ start_hashwrap() {
     $compose_cmd $compose_file build --no-cache
     
     print_info "Starting services..."
-    $compose_cmd $compose_file up -d
+    if ! $compose_cmd $compose_file up -d; then
+        print_error "Failed to start services"
+        print_info "Attempting CPU-only fallback..."
+        
+        # Try CPU-only mode as fallback
+        if [[ "$compose_file" != "-f docker-compose.cpu.yml" ]]; then
+            generate_cpu_compose_file
+            $compose_cmd -f docker-compose.cpu.yml up -d
+        else
+            return 1
+        fi
+    fi
     
     print_success "HashWrap services started"
+}
+
+# Generate CPU-only compose file on the fly
+generate_cpu_compose_file() {
+    print_info "Generating CPU-only Docker Compose configuration"
+    
+    cat > docker-compose.cpu.yml << 'EOF'
+version: '3.8'
+
+services:
+  hashwrap:
+    build: 
+      context: ./webapp
+      dockerfile: Dockerfile
+    container_name: hashwrap
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data/uploads:/app/data/uploads
+      - ./data/results:/app/data/results
+      - ./wordlists:/app/wordlists
+      - ./core:/app/core:ro
+      - ./utils:/app/utils:ro
+    environment:
+      - HASHWRAP_GPU_MODE=disabled
+      - HASHWRAP_CPU_ONLY=true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  hashwrap_data:
+    driver: local
+
+networks:
+  default:
+    name: hashwrap-network
+EOF
+    
+    print_success "CPU-only configuration generated"
 }
 
 # Wait for services to become ready
@@ -564,7 +679,16 @@ show_completion_info() {
     echo ""
     echo -e "${GREEN}${BOLD}🔧 Management Commands:${NC}"
     
-    if [[ -f "docker-compose.simple.yml" ]]; then
+    # Determine which compose file is being used
+    if [[ -f "docker-compose.cpu.yml" && ! -f "docker-compose.gpu.yml" ]]; then
+        echo -e "   • View logs:     ${BLUE}$compose_cmd -f docker-compose.cpu.yml logs -f${NC}"
+        echo -e "   • Stop services: ${BLUE}$compose_cmd -f docker-compose.cpu.yml down${NC}"
+        echo -e "   • Restart:       ${BLUE}$compose_cmd -f docker-compose.cpu.yml restart${NC}"
+    elif [[ -f "docker-compose.gpu.yml" ]]; then
+        echo -e "   • View logs:     ${BLUE}$compose_cmd -f docker-compose.gpu.yml logs -f${NC}"
+        echo -e "   • Stop services: ${BLUE}$compose_cmd -f docker-compose.gpu.yml down${NC}"
+        echo -e "   • Restart:       ${BLUE}$compose_cmd -f docker-compose.gpu.yml restart${NC}"
+    elif [[ -f "docker-compose.simple.yml" ]]; then
         echo -e "   • View logs:     ${BLUE}$compose_cmd -f docker-compose.simple.yml logs -f${NC}"
         echo -e "   • Stop services: ${BLUE}$compose_cmd -f docker-compose.simple.yml down${NC}"
         echo -e "   • Restart:       ${BLUE}$compose_cmd -f docker-compose.simple.yml restart${NC}"
@@ -582,16 +706,20 @@ show_completion_info() {
     echo -e "   • Logs:          ${BLUE}./setup.log${NC}"
     echo ""
     
-    # Show GPU status
-    if docker info 2>/dev/null | grep -q nvidia; then
+    # Show GPU status based on actual deployment
+    if [[ -f "docker-compose.gpu.yml" ]] && docker info 2>/dev/null | grep -q nvidia; then
         print_success "🚀 GPU acceleration is enabled for faster cracking!"
         
         # Show available GPUs
         if command -v nvidia-smi >/dev/null 2>&1; then
             echo -e "${GREEN}${BOLD}🎮 Available GPUs:${NC}"
             nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits | \
-                sed 's/^/   • /' | sed 's/, / - /' | sed 's/$/ MB/'
+                sed 's/^/   • /' | sed 's/, / - /' | sed 's/$/ MB/' 2>/dev/null || echo "   • GPU information unavailable"
         fi
+    elif [[ -f "docker-compose.cpu.yml" ]]; then
+        print_info "💻 Running in CPU-only mode"
+        echo -e "${YELLOW}   • Cracking will be slower but works on all systems${NC}"
+        echo -e "${YELLOW}   • Consider running on a GPU-equipped system for better performance${NC}"
     else
         print_warning "💡 For GPU acceleration, ensure NVIDIA drivers and Container Toolkit are installed"
     fi

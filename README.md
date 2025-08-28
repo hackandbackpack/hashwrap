@@ -77,11 +77,12 @@ hashwrap/
 ## ⚙️ System Requirements
 
 **The setup.sh script automatically handles most requirements:**
-- **Linux**: Ubuntu, Debian, RHEL, CentOS, Fedora, Arch (auto-detected)
+- **Linux**: Ubuntu, Debian, Kali, RHEL, CentOS, Fedora, Arch (auto-detected)
 - **Memory**: 2GB+ RAM (4GB+ recommended for intensive jobs)
 - **Storage**: 5GB+ available space (more for large wordlists)
 - **Docker**: Automatically installed if not present
-- **NVIDIA GPU**: Optional, auto-configured if available
+- **GPU Support**: Auto-detects and configures GPU vs CPU-only mode
+- **Virtual Machines**: Automatically uses CPU-only configuration
 
 ### Add Custom Wordlists
 ```bash
@@ -100,18 +101,36 @@ docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
 
 ## 🐳 Docker Commands
 
+The setup script automatically chooses the right configuration based on your system:
+
+**GPU-enabled systems:**
 ```bash
-# Start HashWrap
-docker-compose -f docker-compose.simple.yml up -d
+# Start HashWrap with GPU acceleration
+docker-compose -f docker-compose.gpu.yml up -d
 
 # View logs
-docker-compose -f docker-compose.simple.yml logs -f
+docker-compose -f docker-compose.gpu.yml logs -f
 
 # Stop HashWrap
-docker-compose -f docker-compose.simple.yml down
+docker-compose -f docker-compose.gpu.yml down
+```
 
-# Restart after changes
-docker-compose -f docker-compose.simple.yml restart
+**CPU-only systems (VMs, non-NVIDIA):**
+```bash
+# Start HashWrap in CPU-only mode  
+docker-compose -f docker-compose.cpu.yml up -d
+
+# View logs
+docker-compose -f docker-compose.cpu.yml logs -f
+
+# Stop HashWrap
+docker-compose -f docker-compose.cpu.yml down
+```
+
+**Manual GPU detection:**
+```bash
+# Test if GPU acceleration is available
+docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
 ```
 
 ## 🚀 Performance Tips
