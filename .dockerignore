@@ -1,0 +1,60 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+docs/
+README*
+CHANGELOG*
+LICENSE*
+SECURITY*
+
+# Testing
+test/
+tests/
+*test*
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+*.log
+logs/
+
+# Development
+.env.local
+.env.development
+.env.test
+
+# Docker files themselves
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Development data
+data/dev/
+data/test/
+
+# Monitoring (include only if needed)
+monitoring/grafana/
+monitoring/prometheus/data/
+
+# Backup files
+*.backup
+*.bak
+*~

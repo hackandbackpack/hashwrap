@@ -1,0 +1,101 @@
+# Hashwrap Configuration
+# This file defines global settings and cracking profiles
+
+global:
+  # Default device selection for hashcat
+  devices: "1,2,3,4"
+  
+  # Session naming pattern
+  session_prefix: "hashwrap"
+  
+  # Potfile configuration
+  potfile_path: "/data/results/hashcat.potfile"
+  
+  # Status update interval (seconds)
+  status_interval: 30
+  
+  # Default hashcat options
+  hashcat_options:
+    - "--force"
+    - "--optimized-kernel-enable"
+    - "--workload-profile=4"
+
+# Cracking profiles define attack strategies
+profiles:
+  quick:
+    description: "Fast dictionary attack for common passwords"
+    max_runtime: 1800  # 30 minutes
+    attacks:
+      - type: dictionary
+        wordlist: "rockyou.txt"
+        rules: "best64.rule"
+        max_candidates: 1000000
+      - type: dictionary
+        wordlist: "common-passwords.txt"
+        max_candidates: 100000
+
+  balanced:
+    description: "Balanced approach with multiple attack types"
+    max_runtime: 7200  # 2 hours
+    attacks:
+      - type: dictionary
+        wordlist: "rockyou.txt"
+        rules: ["best64.rule", "d3ad0ne.rule"]
+        max_candidates: 10000000
+      - type: hybrid
+        wordlist: "common-passwords.txt"
+        mask: "?d?d?d?d"
+        max_candidates: 5000000
+      - type: mask
+        mask: "?l?l?l?l?l?l?d?d"
+        max_candidates: 2000000
+
+  thorough:
+    description: "Comprehensive attack using all available methods"
+    max_runtime: 43200  # 12 hours
+    attacks:
+      - type: dictionary
+        wordlist: "rockyou.txt"
+        rules: ["best64.rule", "d3ad0ne.rule", "dive.rule"]
+        max_candidates: 50000000
+      - type: hybrid
+        wordlist: ["common-passwords.txt", "names.txt"]
+        mask: "?d?d?d?d"
+        max_candidates: 20000000
+      - type: hybrid
+        wordlist: "rockyou.txt"
+        mask: "?d?d"
+        max_candidates: 10000000
+      - type: mask
+        mask: "?u?l?l?l?l?l?d?d"
+        max_candidates: 5000000
+      - type: mask
+        mask: "?l?l?l?l?l?l?l?l"
+        max_candidates: 5000000
+      - type: prince
+        wordlist: "rockyou.txt"
+        max_candidates: 10000000
+
+# Wordlist definitions
+wordlists:
+  "rockyou.txt": "/wordlists/rockyou.txt"
+  "common-passwords.txt": "/wordlists/common-passwords.txt"
+  "names.txt": "/wordlists/names.txt"
+
+# Rules definitions  
+rules:
+  "best64.rule": "/rules/best64.rule"
+  "d3ad0ne.rule": "/rules/d3ad0ne.rule"
+  "dive.rule": "/rules/dive.rule"
+
+# Hash type mappings (hashcat modes)
+hash_types:
+  MD5: 0
+  SHA1: 100
+  SHA256: 1400
+  SHA512: 1700
+  NTLM: 1000
+  bcrypt: 3200
+  scrypt: 8900
+  PBKDF2-SHA1: 12000
+  PBKDF2-SHA256: 10900

@@ -1,0 +1,201 @@
+version: '3.8'
+
+# Development overrides for HashWrap
+services:
+  # Database - Development settings
+  database:
+    environment:
+      POSTGRES_DB: hashwrap_dev
+      POSTGRES_USER: hashwrap_dev
+      POSTGRES_PASSWORD: dev_password_change_in_production
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/dev/postgres:/var/lib/postgresql/data
+    # Remove read-only for development
+    read_only: false
+
+  # Redis - Development settings
+  redis:
+    command: redis-server --requirepass dev_redis_password --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/dev/redis:/data
+    # Remove read-only for development
+    read_only: false
+
+  # Backend - Development with hot reload
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+      target: development
+    environment:
+      DATABASE_URL: postgresql://hashwrap_dev:dev_password_change_in_production@database:5432/hashwrap_dev
+      REDIS_URL: redis://:dev_redis_password@redis:6379/0
+      SECRET_KEY: dev_secret_key_change_in_production
+      DEBUG: "true"
+      LOG_LEVEL: "DEBUG"
+      RELOAD: "true"
+    volumes:
+      - ./backend:/app:cached
+      - ./data/dev/uploads:/data/uploads
+      - ./data/dev/results:/data/results
+      - ./data/dev/logs:/logs
+    ports:
+      - "8000:8000"
+    command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    # Remove security restrictions for development
+    security_opt: []
+    read_only: false
+    secrets: []
+
+  # Worker - Development settings
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile.dev
+      target: development
+    environment:
+      DATABASE_URL: postgresql://hashwrap_dev:dev_password_change_in_production@database:5432/hashwrap_dev
+      REDIS_URL: redis://:dev_redis_password@redis:6379/0
+      DEBUG: "true"
+      LOG_LEVEL: "DEBUG"
+    volumes:
+      - ./worker:/app:cached
+      - ./backend:/app/backend:cached
+      - ./data/dev/uploads:/data/uploads
+      - ./data/dev/results:/data/results
+      - ./wordlists:/data/wordlists:ro
+      - ./rules:/data/rules:ro
+      - ./data/dev/logs:/logs
+    command: ["python", "-m", "celery", "-A", "celery_app", "worker", "--loglevel=debug", "--concurrency=1", "--queues=hashcat,default"]
+    # Remove security restrictions for development
+    security_opt: []
+    secrets: []
+    # Remove GPU constraints for development (can still use if available)
+    deploy:
+      resources: {}
+
+  # Scheduler - Development settings
+  scheduler:
+    environment:
+      DATABASE_URL: postgresql://hashwrap_dev:dev_password_change_in_production@database:5432/hashwrap_dev
+      REDIS_URL: redis://:dev_redis_password@redis:6379/0
+      DEBUG: "true"
+      LOG_LEVEL: "DEBUG"
+    volumes:
+      - ./worker:/app:cached
+      - ./data/dev/scheduler:/data
+      - ./data/dev/logs:/logs
+    # Remove security restrictions for development
+    security_opt: []
+    secrets: []
+
+  # Frontend - Development with hot reload
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+      target: development
+    environment:
+      NODE_ENV: development
+      VITE_API_URL: http://localhost:8000
+      VITE_WS_URL: ws://localhost:8000
+    volumes:
+      - ./frontend:/app:cached
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    # Remove security restrictions for development
+    security_opt: []
+    read_only: false
+
+  # Development Nginx (simpler config)
+  nginx:
+    image: nginx:1.25-alpine
+    volumes:
+      - ./nginx/dev/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/dev/conf.d:/etc/nginx/conf.d:ro
+      - ./data/dev/logs/nginx:/var/log/nginx
+    ports:
+      - "8080:80"
+    # Remove security restrictions for development
+    security_opt: []
+
+  # Development database admin (pgAdmin)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: hashwrap-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@hashwrap.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - ./data/dev/pgadmin:/var/lib/pgadmin
+    ports:
+      - "5050:80"
+    networks:
+      - hashwrap-backend
+    profiles:
+      - dev-tools
+
+  # Redis CLI for debugging
+  redis-cli:
+    image: redis:7-alpine
+    container_name: hashwrap-redis-cli
+    networks:
+      - hashwrap-backend
+    profiles:
+      - dev-tools
+    command: ["redis-cli", "-h", "redis", "-a", "dev_redis_password"]
+
+  # Mailhog for email testing
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: hashwrap-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    networks:
+      - hashwrap-backend
+    profiles:
+      - dev-tools
+
+  # Optional: Flower for Celery monitoring
+  flower:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: hashwrap-flower
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      CELERY_BROKER_URL: redis://:dev_redis_password@redis:6379/0
+      FLOWER_UNAUTHENTICATED_API: 'true'
+    ports:
+      - "5555:5555"
+    networks:
+      - hashwrap-backend
+    profiles:
+      - dev-tools
+    command: ["python", "-m", "celery", "-A", "celery_app", "flower", "--port=5555"]
+
+# Override network settings for development
+networks:
+  hashwrap-backend:
+    # Make backend network not internal for development access
+    internal: false
+
+# Development-specific volumes
+volumes:
+  dev_postgres_data:
+    driver: local
+  dev_redis_data:
+    driver: local

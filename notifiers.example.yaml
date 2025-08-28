@@ -1,0 +1,145 @@
+# Notification Configuration
+# Configure Slack and Discord webhooks for job events
+
+slack:
+  enabled: true
+  channels:
+    general:
+      webhook_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+      events:
+        - job_queued
+        - job_started
+        - job_progress
+        - job_completed
+        - job_failed
+        - password_cracked
+    alerts:
+      webhook_url: "https://hooks.slack.com/services/YOUR/ALERT/WEBHOOK"
+      events:
+        - job_failed
+        - system_error
+        - security_event
+  
+  # Global Slack settings
+  username: "HashWrap Bot"
+  icon_emoji: ":lock:"
+  
+  # Message templates
+  templates:
+    job_started: "🚀 Job `{job_name}` started - Hash Type: {hash_type}, Profile: {profile}"
+    job_progress: "⏳ Job `{job_name}` - {progress}% complete, Speed: {speed}, ETA: {eta}"
+    password_cracked: "🔓 Password cracked in job `{job_name}` - {cracked_count} total"
+    job_completed: "✅ Job `{job_name}` completed - {cracked_count}/{total_count} cracked in {duration}"
+    job_failed: "❌ Job `{job_name}` failed - {error_message}"
+
+discord:
+  enabled: true
+  channels:
+    main:
+      webhook_url: "https://discord.com/api/webhooks/YOUR/DISCORD/WEBHOOK"
+      events:
+        - job_queued
+        - job_started
+        - job_progress
+        - job_completed
+        - job_failed
+        - password_cracked
+    
+    # Separate channel for sensitive events
+    security:
+      webhook_url: "https://discord.com/api/webhooks/YOUR/SECURITY/WEBHOOK"
+      events:
+        - security_event
+        - admin_action
+        - password_reveal
+  
+  # Global Discord settings
+  username: "HashWrap"
+  avatar_url: "https://example.com/hashwrap-avatar.png"
+  
+  # Rich embed templates
+  templates:
+    job_started:
+      title: "Job Started"
+      color: 0x00ff00  # Green
+      description: "Job `{job_name}` has started processing"
+      fields:
+        - name: "Hash Type"
+          value: "{hash_type}"
+          inline: true
+        - name: "Profile"
+          value: "{profile}"
+          inline: true
+        - name: "Total Hashes"
+          value: "{total_count}"
+          inline: true
+    
+    job_progress:
+      title: "Job Progress"
+      color: 0xffff00  # Yellow
+      description: "Progress update for `{job_name}`"
+      fields:
+        - name: "Progress"
+          value: "{progress}%"
+          inline: true
+        - name: "Speed"
+          value: "{speed}"
+          inline: true
+        - name: "ETA"
+          value: "{eta}"
+          inline: true
+    
+    password_cracked:
+      title: "Password Cracked!"
+      color: 0xff8000  # Orange
+      description: "New password cracked in `{job_name}`"
+      fields:
+        - name: "Total Cracked"
+          value: "{cracked_count}"
+          inline: true
+        - name: "Remaining"
+          value: "{remaining_count}"
+          inline: true
+    
+    job_completed:
+      title: "Job Completed"
+      color: 0x0080ff  # Blue
+      description: "Job `{job_name}` has finished"
+      fields:
+        - name: "Results"
+          value: "{cracked_count}/{total_count} cracked"
+          inline: true
+        - name: "Duration"
+          value: "{duration}"
+          inline: true
+        - name: "Success Rate"
+          value: "{success_rate}%"
+          inline: true
+    
+    job_failed:
+      title: "Job Failed"
+      color: 0xff0000  # Red
+      description: "Job `{job_name}` encountered an error"
+      fields:
+        - name: "Error"
+          value: "{error_message}"
+          inline: false
+
+# Global notification settings
+global:
+  # Progress notification frequency (minutes)
+  progress_interval: 5
+  
+  # Webhook timeout (seconds)
+  timeout: 10
+  
+  # Retry configuration
+  retries: 3
+  retry_delay: 5  # seconds
+  
+  # Rate limiting
+  rate_limit: 60  # messages per hour per channel
+  
+  # Security settings
+  mask_passwords: true  # Mask passwords in notifications by default
+  include_links: true   # Include links to web UI in notifications
