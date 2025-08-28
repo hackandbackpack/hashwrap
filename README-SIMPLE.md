@@ -8,8 +8,8 @@
 ## ⚡ Quick Start
 
 ```bash
-# One command deployment
-./bootstrap-simple.sh
+# One command deployment (auto-installs Docker if needed)
+./setup.sh
 
 # Access at: http://localhost:5000
 # Login: admin / admin
@@ -33,7 +33,7 @@ hashwrap/
 │   ├── uploads/        # Drop hash files here
 │   └── results/        # Cracked passwords stored here
 ├── wordlists/          # Add your wordlists here
-└── bootstrap-simple.sh # One-command setup
+└── setup.sh            # One-command setup with auto Docker install
 ```
 
 ## 🔧 Usage
@@ -172,4 +172,4 @@ docker-compose -f docker-compose.simple.yml exec hashwrap hashcat --version
 
 ---
 
-**🔓 Ready to crack some hashes? Run `./bootstrap-simple.sh` and get started!**
+**🔓 Ready to crack some hashes? Run `./setup.sh` and get started!**

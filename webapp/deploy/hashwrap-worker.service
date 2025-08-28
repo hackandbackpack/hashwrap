@@ -1,0 +1,44 @@
+# HashWrap Worker Systemd Service
+# Manages the hashcat worker daemon for job processing
+
+[Unit]
+Description=HashWrap Hashcat Worker Daemon
+Documentation=https://github.com/hackandbackpack/hashwrap
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=hashwrap
+Group=hashwrap
+WorkingDirectory=/opt/hashwrap/webapp
+Environment=PATH=/opt/hashwrap/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/hashwrap/webapp
+ExecStart=/opt/hashwrap/venv/bin/python3 /opt/hashwrap/webapp/hashcat_worker.py
+ExecReload=/bin/kill -USR1 $MAINPID
+KillMode=mixed
+TimeoutStopSec=30
+Restart=always
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/hashwrap/webapp/data
+ReadWritePaths=/opt/hashwrap/webapp/logs
+ReadWritePaths=/var/log/hashwrap
+ReadWritePaths=/tmp
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=4G
+CPUQuota=200%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hashwrap-worker
+
+[Install]
+WantedBy=multi-user.target

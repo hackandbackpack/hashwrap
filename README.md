@@ -1,232 +1,260 @@
-# HashWrap - Secure Password Cracking Service
+# HashWrap - Penetration Testing Hash Cracker
+
+**🎯 Web interface for hash cracking during penetration tests with automatic Docker setup**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Docker](https://img.shields.io/badge/Docker-Enabled-blue)](https://docker.com)
-[![Security](https://img.shields.io/badge/Security-Hardened-green)](https://github.com/hackandbackpack/hashwrap)
+[![Docker](https://img.shields.io/badge/Docker-Auto--Install-blue)](https://docker.com)
+[![Security](https://img.shields.io/badge/Security-Pentest--Ready-green)](https://github.com/hackandbackpack/hashwrap)
 
 **⚠️ AUTHORIZED USE ONLY**: This tool is designed exclusively for authorized penetration testing and security research. Users must obtain explicit written authorization before processing any password hashes.
 
-## Overview
-
-HashWrap transforms the powerful command-line hashcat tool into a secure, auditable, web-managed cracking service. Built for professional penetration testers and security researchers, it provides enterprise-grade security controls, comprehensive audit trails, and streamlined workflow management.
-
-### Key Features
-
-- **🔐 Enterprise Security**: Multi-factor authentication, role-based access control, audit logging
-- **🚀 GPU Acceleration**: Full NVIDIA CUDA support with automatic GPU detection
-- **📊 Real-time Monitoring**: Live job progress, system metrics, and performance dashboards  
-- **🔔 Smart Notifications**: Slack and Discord integration with customizable event triggers
-- **📈 Advanced Analytics**: Success rates, performance metrics, and detailed reporting
-- **🏢 Compliance Ready**: Legal authorization tracking, immutable audit logs, data retention policies
-- **🎯 Attack Profiles**: Pre-configured attack strategies (quick, balanced, thorough)
-- **🔍 Auto-Detection**: Intelligent hash type identification with confidence scoring
-
-## Quick Start
-
-### One-Command Deployment
+## ⚡ Quick Start
 
 ```bash
+# Clone and run setup (auto-installs Docker if needed)
 git clone https://github.com/hackandbackpack/hashwrap.git
 cd hashwrap
-./bootstrap.sh
+./setup.sh
+
+# Access at: http://localhost:5000
+# Login: admin / admin
 ```
 
-That's it! The bootstrap script will:
-- ✅ Check system requirements (Docker, NVIDIA toolkit)
-- ✅ Generate secure secrets and certificates
-- ✅ Create directory structure and sample configs
-- ✅ Build and deploy all services with Docker Compose
-- ✅ Verify service health and GPU availability
+## 🎯 What This Does
 
-**Access your instance:** http://localhost (or https://localhost:8443 with SSL)
+- **Web Interface**: Upload hash files, view progress, get results
+- **Auto Detection**: Automatically detects MD5, SHA1, SHA256, NTLM, bcrypt, etc.
+- **GPU Acceleration**: Uses your NVIDIA GPU if available
+- **Real-time Progress**: See cracking progress live
+- **Export Results**: Download cracked passwords as CSV
+- **Smart Setup**: Automatically installs Docker, Docker Compose, and NVIDIA support
+- **Simple Deployment**: Single container, no complex configuration
 
-### Prerequisites
-
-- **Docker & Docker Compose** (latest versions)
-- **NVIDIA Container Toolkit** (for GPU acceleration)
-- **8GB+ RAM** (recommended for intensive cracking jobs)
-- **100GB+ Storage** (for wordlists, results, and job data)
-
-## Architecture
-
-HashWrap employs a microservices architecture designed for security, scalability, and reliability:
+## 📁 File Structure
 
 ```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   React UI      │    │   FastAPI API    │    │  Celery Workers │
-│   (Frontend)    │───▶│   (Backend)      │───▶│  (Job Execution)│
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-         │                        │                        │
-         │              ┌─────────▼─────────┐             │
-         │              │   PostgreSQL      │             │
-         │              │   (Database)      │             │
-         │              └───────────────────┘             │
-         │                        │                        │
-         │              ┌─────────▼─────────┐    ┌────────▼─────────┐
-         └──────────────┤      Redis        │    │     Hashcat      │
-                        │   (Queue/Cache)   │    │  (GPU Processing)│
-                        └───────────────────┘    └──────────────────┘
+hashwrap/
+├── webapp/              # Simplified Flask web app
+│   ├── app_fixed.py    # Main application with comprehensive error handling
+│   ├── hashcat_worker.py # Background worker for job processing
+│   └── templates/      # Web interface templates
+├── data/
+│   ├── uploads/        # Drop hash files here
+│   └── results/        # Cracked passwords stored here
+├── wordlists/          # Add your wordlists here
+└── setup.sh            # One-command setup with auto Docker install
 ```
 
-## Security Model
+## 🔧 Usage
 
-### Authentication & Authorization
+### 1. Upload Hash Files
+- Click "Upload Hash File" in web interface
+- Drag & drop your .txt, .hash, or .lst files
+- System auto-detects hash type
 
-- **Multi-Factor Authentication**: TOTP (Time-based One-Time Password) required
-- **Role-Based Access Control**: Admin, Operator, Viewer permission levels
-- **Session Management**: Secure HTTP-only cookies with CSRF protection
-- **Account Lockout**: Automatic lockout after failed login attempts
+### 2. Monitor Progress
+- View real-time cracking progress
+- See GPU utilization and speed
+- Get notifications when jobs complete
 
-### Data Protection
+### 3. Get Results
+- View cracked passwords (hidden by default)
+- Export to CSV for reporting
+- Results saved automatically
 
-- **Default Masking**: All cracked passwords masked in UI and logs by default
-- **Audit Trail**: Every password reveal generates immutable audit record
-- **Secure Export**: Explicit export actions with full audit trail
-- **Data Retention**: Configurable cleanup policies with secure deletion
+## 📋 Supported Hash Types
 
-## Quick Usage
+| Hash Type | Example | Auto-Detect |
+|-----------|---------|-------------|
+| MD5 | `5d41402abc4b2a76b9719d911017c592` | ✅ |
+| SHA1 | `aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d` | ✅ |
+| SHA256 | `ef537f25c895bfa782526529a9b63d97aa631564d5d789c2b765448c8635fb6c` | ✅ |
+| NTLM | `admin:1001:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::` | ✅ |
+| bcrypt | `$2b$12$GhvMmNVjRW29ulnudl5fGeJrYKs.Ja4u7eFVdgfO3CnhSwI7wacay` | ✅ |
+| MD5crypt | `$1$salt$qJH7.N4xYta3aEG/dfqo/0` | ✅ |
+| SHA512crypt | `$6$salt$IxDD3jeSOb5eB1CX5LBsqZFVkJdido3OUILO5Ifz5iwMuTS4XMS130MTSuDDl3aCI6WouIL9AjRbLCelDCy.g.` | ✅ |
 
-### 1. Initial Setup
-1. Create admin account at http://localhost
-2. Enable 2FA authentication
-3. Create project with client authorization details
+## ⚙️ System Requirements
 
-### 2. Upload Hash Files
-- Drag & drop files in web interface
-- Supports MD5, SHA1, SHA256, NTLM, bcrypt, and more
-- Automatic hash type detection
+**The setup.sh script automatically handles most requirements:**
+- **Linux**: Ubuntu, Debian, RHEL, CentOS, Fedora, Arch (auto-detected)
+- **Memory**: 2GB+ RAM (4GB+ recommended for intensive jobs)
+- **Storage**: 5GB+ available space (more for large wordlists)
+- **Docker**: Automatically installed if not present
+- **NVIDIA GPU**: Optional, auto-configured if available
 
-### 3. Run Cracking Jobs
-- Choose attack profile (quick/balanced/thorough)
-- Monitor real-time progress with GPU stats
-- Control jobs (pause/resume/cancel)
-
-### 4. View Results
-- Search and filter crack results
-- Export data (CSV/JSON) with audit logging
-- Role-based password reveal
-
-## Configuration Files
-
-### hashwrap.yaml - Attack Profiles
-```yaml
-profiles:
-  quick:
-    description: "Fast dictionary attack"
-    max_runtime: 1800
-    attacks:
-      - type: dictionary
-        wordlist: "rockyou.txt"
-        rules: "best64.rule"
-```
-
-### notifiers.yaml - Webhooks
-```yaml
-slack:
-  enabled: true
-  channels:
-    general:
-      webhook_url: "https://hooks.slack.com/your/webhook"
-      events: [job_started, job_completed, password_cracked]
-```
-
-## API Access
-
-Full OpenAPI documentation: http://localhost/api/v1/docs
-
+### Add Custom Wordlists
 ```bash
-# Authentication
-curl -X POST "http://localhost/api/v1/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com", "password": "password", "totp_code": "123456"}'
+# Add your wordlists to the wordlists directory
+cp /path/to/rockyou.txt wordlists/
+cp /path/to/custom.txt wordlists/
 
-# Get jobs
-curl -X GET "http://localhost/api/v1/jobs" \
-  -H "Authorization: Bearer your-jwt-token"
+# The setup creates a basic wordlist automatically
 ```
 
-## Monitoring
-
-- **Health Check**: `GET /healthz`
-- **Metrics**: `GET /metrics` (Prometheus format)
-- **Logs**: Structured JSON logging with full context
-
-## Development
-
+### Check GPU Support
 ```bash
-# Backend development
-cd backend && pip install -r requirements.txt
-uvicorn app.main:app --reload
-
-# Frontend development  
-cd frontend && npm install
-npm run dev
-
-# Run tests
-pytest backend/tests/
-npm run test --prefix frontend
-```
-
-## Production Deployment
-
-### Security Checklist
-- [ ] Enable HTTPS with valid SSL certificates
-- [ ] Configure reverse proxy security headers
-- [ ] Set up database backups and monitoring
-- [ ] Review security policies and access controls
-- [ ] Configure external secrets management
-- [ ] Set up log aggregation and alerting
-
-### Docker Compose Production
-```bash
-# Use production configuration
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-```
-
-## Troubleshooting
-
-### GPU Issues
-```bash
-# Check NVIDIA drivers
-nvidia-smi
-
-# Test Docker GPU support
+# Test GPU access after setup
 docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
 ```
 
-### Service Issues
-```bash
-# Check logs
-docker-compose logs -f api worker
+## 🐳 Docker Commands
 
-# Health status
-curl http://localhost/healthz
+```bash
+# Start HashWrap
+docker-compose -f docker-compose.simple.yml up -d
+
+# View logs
+docker-compose -f docker-compose.simple.yml logs -f
+
+# Stop HashWrap
+docker-compose -f docker-compose.simple.yml down
+
+# Restart after changes
+docker-compose -f docker-compose.simple.yml restart
 ```
 
-## Security & Compliance
+## 🚀 Performance Tips
 
-### Legal Requirements
-- Written authorization required for all hash processing
-- Client engagement ID tracking for audit compliance
-- Comprehensive activity logging and retention policies
+1. **Use GPU**: The setup script automatically installs NVIDIA Container Toolkit for 10-100x speed boost
+2. **Good Wordlists**: Use rockyou.txt or other comprehensive wordlists
+3. **File Size**: Break large hash files into smaller chunks (< 1M lines each)
+4. **Resource Monitoring**: Monitor GPU temperature during long jobs
 
-### Data Handling
-- All passwords masked by default in logs and UI
-- Explicit reveal actions create audit records
-- Configurable data retention with secure deletion
+## 🔍 Troubleshooting
 
-## Support & Contributing
+### Setup Issues
+
+**"Docker installation failed"**
+```bash
+# Check setup logs
+cat setup.log
+
+# Manual Docker install (if needed)
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+```
+
+**"Permission denied"**
+```bash
+# Fix file permissions
+sudo chown -R $USER:$USER data/ wordlists/
+
+# Add user to docker group (may require logout/login)
+sudo usermod -aG docker $USER
+```
+
+### Runtime Issues
+
+**"No GPU detected"**
+```bash
+# The setup script handles this, but if needed:
+sudo apt install nvidia-container-toolkit
+sudo systemctl restart docker
+```
+
+**"Hashcat not found"**
+```bash
+# Rebuild container
+docker-compose -f docker-compose.simple.yml build --no-cache
+```
+
+### Logs and Debugging
+```bash
+# View detailed logs
+docker-compose -f docker-compose.simple.yml logs hashwrap
+
+# Access container shell
+docker-compose -f docker-compose.simple.yml exec hashwrap bash
+
+# Check hashcat version
+docker-compose -f docker-compose.simple.yml exec hashwrap hashcat --version
+
+# System validation
+python3 webapp/validate_deployment.py
+```
+
+## 🧪 Testing
+
+The setup includes comprehensive testing tools:
+
+```bash
+# Pre-deployment validation
+cd webapp
+python3 validate_deployment.py
+
+# Full system test
+python3 test_system.py http://localhost:5000
+```
+
+## 🚀 Production Deployment
+
+For production deployment on Linux servers with Apache:
+
+```bash
+# Use the production deployment files
+cd webapp/deploy
+sudo chmod +x install-linux.sh
+sudo ./install-linux.sh
+
+# See webapp/DEPLOYMENT.md for full guide
+```
+
+## 🎯 Perfect For
+
+- **Penetration Testing**: Quick hash cracking during engagements
+- **CTF Competitions**: Fast setup and reliable cracking
+- **Security Research**: Simple codebase to understand and modify
+- **Small Teams**: No complex user management needed
+- **Training**: Educational tool for understanding hash cracking
+
+## 🏗️ Architecture
+
+Simple, focused architecture designed for penetration testers:
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Web Interface │    │   Flask App      │    │  Worker Daemon  │
+│   (Browser)     │───▶│   (Python)       │───▶│  (Hashcat Jobs) │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+         │                        │                        │
+         │              ┌─────────▼─────────┐             │
+         │              │   SQLite DB       │             │
+         │              │   (Job Storage)   │             │
+         │              └───────────────────┘             │
+         │                                                │
+         └────────────────────────────────────────────────┘
+                           File System
+                    (Uploads, Results, Wordlists)
+```
+
+**Key Features:**
+- **Thread-Safe**: Comprehensive database locking and error handling
+- **Secure**: File validation, session management, rate limiting
+- **Monitored**: Extensive logging with checkpoint system
+- **Validated**: Pre-deployment checks and system testing
+- **Production-Ready**: Apache deployment configuration included
+
+## ⚠️ Security Notes
+
+- **Change default credentials** (admin/admin) immediately in production
+- **Use only for authorized testing** - never crack hashes without permission
+- **Secure the web interface** - don't expose to the internet without proper security
+- **Monitor resource usage** - hash cracking is resource-intensive
+- **Regular updates** - keep Docker images and system packages updated
+
+## 📞 Support & Contributing
 
 - **Issues**: Report bugs and request features on GitHub
-- **Security**: Email security@hackandbackpack.com for vulnerabilities
-- **Contributing**: See CONTRIBUTING.md for development guidelines
+- **Security**: Email security@hackandbackpack.com for vulnerabilities  
+- **Documentation**: See webapp/DEPLOYMENT.md for production setup
 
-## License
+## 📄 License
 
 MIT License - see LICENSE file for details.
 
 ---
 
-**⚠️ IMPORTANT**: This tool is for authorized security testing only. Ensure proper authorization before processing any password hashes. Unauthorized use is illegal and unethical.
+**🔓 Ready to crack some hashes? Run `./setup.sh` and get started!**
 
-For questions and support: support@hackandbackpack.com
+**⚠️ IMPORTANT**: This tool is for authorized security testing only. Ensure proper authorization before processing any password hashes. Unauthorized use is illegal and unethical.
