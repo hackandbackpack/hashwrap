@@ -33,7 +33,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Start both web app and worker
 CMD python -c "import threading; \
-    from app import app; \
+    from app_fixed import app; \
     from hashcat_worker import SimpleHashcatWorker; \
     worker = SimpleHashcatWorker(); \
     worker_thread = threading.Thread(target=worker.start, daemon=True); \

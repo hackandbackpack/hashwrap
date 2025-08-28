@@ -77,19 +77,22 @@ detect_os() {
     log "OS Detection: $OS $OS_VERSION $OS_CODENAME"
 }
 
-# Check if running as root
+# Check if running as root (required)
 check_root() {
-    if [[ $EUID -eq 0 ]]; then
-        print_warning "Running as root. This is not recommended for Docker operations."
-        if [[ -z "${SUDO_USER:-}" ]]; then
-            print_error "Please run this script with 'sudo' or as a regular user with sudo privileges"
-            exit 1
-        fi
+    if [[ $EUID -ne 0 ]]; then
+        print_error "This script must be run as root or with sudo privileges"
+        print_info "Please run: sudo $0"
+        exit 1
+    fi
+    
+    if [[ -z "${SUDO_USER:-}" ]]; then
+        print_warning "Running as actual root user"
+        REAL_USER="root"
+        REAL_HOME="/root"
+    else
+        print_success "Running with sudo privileges"
         REAL_USER="$SUDO_USER"
         REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
-    else
-        REAL_USER="$USER"
-        REAL_HOME="$HOME"
     fi
     
     print_info "Setup user: $REAL_USER"
@@ -144,6 +147,9 @@ install_docker() {
     case "$OS" in
         ubuntu|debian)
             install_docker_debian
+            ;;
+        kali)
+            install_docker_kali
             ;;
         rhel|centos|rocky|almalinux)
             install_docker_rhel
@@ -200,6 +206,19 @@ install_docker_debian() {
     # Install Docker Engine
     apt-get update
     apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin
+}
+
+install_docker_kali() {
+    print_info "Installing Docker on Kali Linux"
+    
+    # Update package index
+    apt-get update
+    
+    # Install Docker from Kali repositories (simpler approach)
+    apt-get install -y docker.io
+    
+    # Install docker-compose if available
+    apt-get install -y docker-compose || print_warning "docker-compose not available in Kali repos, will install later"
 }
 
 install_docker_rhel() {
@@ -327,6 +346,24 @@ install_nvidia_support() {
             
             apt-get update
             apt-get install -y nvidia-docker2
+            ;;
+        kali)
+            # For Kali, try to install from repositories or use manual installation
+            apt-get update
+            if apt-get install -y nvidia-docker2; then
+                print_success "Installed nvidia-docker2 from Kali repositories"
+            else
+                print_warning "nvidia-docker2 not available in Kali repos"
+                print_info "Attempting manual installation..."
+                
+                # Add NVIDIA repository (using Ubuntu setup as fallback)
+                curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | apt-key add -
+                curl -s -L https://nvidia.github.io/nvidia-docker/ubuntu20.04/nvidia-docker.list | \
+                    tee /etc/apt/sources.list.d/nvidia-docker.list
+                
+                apt-get update
+                apt-get install -y nvidia-docker2 || print_warning "Manual NVIDIA Container Toolkit installation failed"
+            fi
             ;;
         rhel|centos|rocky|almalinux)
             # Add NVIDIA repository
