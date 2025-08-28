@@ -1,0 +1,46 @@
+version: '3.8'
+
+# Test environment for HashWrap CI/CD pipeline
+services:
+  # Test database
+  test-database:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: test_hashwrap
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks:
+      - test-network
+
+  # Test Redis
+  test-redis:
+    image: redis:7-alpine
+    tmpfs:
+      - /data
+    networks:
+      - test-network
+
+  # Integration tests
+  integration-tests:
+    build:
+      context: .
+      dockerfile: tests/Dockerfile.test
+    environment:
+      - DATABASE_URL=postgresql://test:test@test-database:5432/test_hashwrap
+      - REDIS_URL=redis://test-redis:6379/0
+      - SECRET_KEY=test-secret-key
+      - JWT_SECRET=test-jwt-secret
+    depends_on:
+      - test-database
+      - test-redis
+    networks:
+      - test-network
+    volumes:
+      - ./tests:/app/tests:ro
+    command: ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
+
+networks:
+  test-network:
+    driver: bridge
