@@ -330,8 +330,8 @@ install_nvidia_support() {
             ;;
         rhel|centos|rocky|almalinux)
             # Add NVIDIA repository
-            distribution=\$(. /etc/os-release;echo \$ID\$VERSION_ID)
-            curl -s -L https://nvidia.github.io/nvidia-docker/\$distribution/nvidia-docker.repo | \
+            distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+            curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.repo | \
                 tee /etc/yum.repos.d/nvidia-docker.repo
             
             yum install -y nvidia-docker2
