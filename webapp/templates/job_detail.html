@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+
+{% block title %}Job: {{ job.filename }} - HashWrap{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1rem;">
+    <a href="{{ url_for('index') }}" class="btn btn-secondary">← Back to Dashboard</a>
+</div>
+
+<div class="card">
+    <h2>📊 Job Details: {{ job.filename }}</h2>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin: 1.5rem 0;">
+        <div>
+            <strong>File:</strong> {{ job.filename }}<br>
+            <strong>Hash Type:</strong> {{ job.hash_type or 'Unknown' }}<br>
+            <strong>Total Hashes:</strong> {{ job.total_hashes }}<br>
+        </div>
+        <div>
+            <strong>Status:</strong> <span class="status status-{{ job.status }}">{{ job.status }}</span><br>
+            <strong>Created:</strong> {{ job.created_at }}<br>
+            {% if job.started_at %}
+            <strong>Started:</strong> {{ job.started_at }}<br>
+            {% endif %}
+        </div>
+        <div>
+            <strong>Progress:</strong> 
+            <div style="margin-top: 0.5rem;">
+                {% if job.total_hashes %}
+                    {% set progress = ((job.cracked_count or 0) / job.total_hashes * 100) %}
+                    <div style="background: #444; height: 20px; border-radius: 10px; overflow: hidden;">
+                        <div style="background: #00ff41; height: 100%; width: {{ progress }}%; transition: width 0.5s;"></div>
+                    </div>
+                    <div style="margin-top: 0.5rem;">
+                        {{ progress | round(1) }}% - {{ job.cracked_count or 0 }}/{{ job.total_hashes }} cracked
+                    </div>
+                {% else %}
+                    <em>No hashes to process</em>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    {% if job.status == 'running' %}
+        <div style="margin-top: 1rem; padding: 1rem; background: rgba(255,170,0,0.1); border-radius: 5px; border-left: 4px solid #ffaa00;">
+            <strong>🔄 Job is currently running</strong><br>
+            This page will auto-refresh every 10 seconds to show progress.
+        </div>
+    {% endif %}
+</div>
+
+{% if results %}
+<div class="card">
+    <h3>🔓 Cracked Passwords ({{ results | length }})</h3>
+    
+    <div style="margin: 1rem 0;">
+        <button onclick="togglePasswords()" class="btn btn-secondary" id="toggle-btn">👁️ Show Passwords</button>
+        <button onclick="exportResults()" class="btn">📁 Export Results</button>
+    </div>
+    
+    <table id="results-table">
+        <thead>
+            <tr>
+                <th>Hash</th>
+                <th>Password</th>
+                <th>Cracked At</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for result in results %}
+            <tr>
+                <td style="font-family: monospace; font-size: 0.9em;">
+                    {{ result.hash_value[:20] }}...
+                </td>
+                <td>
+                    <span class="password hidden">{{ result.password }}</span>
+                    <span class="password-placeholder">••••••••</span>
+                </td>
+                <td>{{ result.cracked_at }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card">
+    <h3>🔐 No passwords cracked yet</h3>
+    
+    {% if job.status == 'queued' %}
+        <p>Job is queued and waiting to start.</p>
+        <button onclick="startJob({{ job.id }})" class="btn">🚀 Start Job</button>
+    {% elif job.status == 'running' %}
+        <p>Job is currently running. Cracked passwords will appear here as they are found.</p>
+    {% elif job.status == 'completed' %}
+        <p>Job completed but no passwords were cracked. Try a different wordlist or attack method.</p>
+    {% elif job.status == 'failed' %}
+        <p>Job failed to complete. Check the hashcat logs for error details.</p>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+    <h3>⚙️ Job Controls</h3>
+    
+    {% if job.status == 'queued' %}
+        <button onclick="startJob({{ job.id }})" class="btn">🚀 Start Job</button>
+        <button onclick="deleteJob({{ job.id }})" class="btn btn-secondary">🗑️ Delete</button>
+    {% elif job.status == 'running' %}
+        <button onclick="pauseJob({{ job.id }})" class="btn btn-secondary">⏸️ Pause</button>
+        <button onclick="stopJob({{ job.id }})" class="btn btn-secondary">🛑 Stop</button>
+    {% elif job.status == 'paused' %}
+        <button onclick="resumeJob({{ job.id }})" class="btn">▶️ Resume</button>
+        <button onclick="stopJob({{ job.id }})" class="btn btn-secondary">🛑 Stop</button>
+    {% elif job.status in ['completed', 'failed'] %}
+        <button onclick="restartJob({{ job.id }})" class="btn">🔄 Restart</button>
+        <button onclick="deleteJob({{ job.id }})" class="btn btn-secondary">🗑️ Delete</button>
+    {% endif %}
+</div>
+
+<script>
+let passwordsVisible = false;
+
+function togglePasswords() {
+    const passwords = document.querySelectorAll('.password');
+    const placeholders = document.querySelectorAll('.password-placeholder');
+    const toggleBtn = document.getElementById('toggle-btn');
+    
+    passwordsVisible = !passwordsVisible;
+    
+    passwords.forEach(password => {
+        password.style.display = passwordsVisible ? 'inline' : 'none';
+    });
+    
+    placeholders.forEach(placeholder => {
+        placeholder.style.display = passwordsVisible ? 'none' : 'inline';
+    });
+    
+    toggleBtn.textContent = passwordsVisible ? '🙈 Hide Passwords' : '👁️ Show Passwords';
+}
+
+function exportResults() {
+    const csvContent = "data:text/csv;charset=utf-8," + 
+        "Hash,Password,Cracked At\n" +
+        {% if results %}
+        [{% for result in results %}"{{ result.hash_value }}","{{ result.password }}","{{ result.cracked_at }}"{% if not loop.last %},{% endif %}{% endfor %}].join("\n");
+        {% else %}
+        "";
+        {% endif %}
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "hashwrap_results_{{ job.id }}.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+function startJob(jobId) {
+    if (confirm('Start cracking job?')) {
+        controlJob(jobId, 'start');
+    }
+}
+
+function pauseJob(jobId) {
+    if (confirm('Pause cracking job?')) {
+        controlJob(jobId, 'pause');
+    }
+}
+
+function resumeJob(jobId) {
+    controlJob(jobId, 'resume');
+}
+
+function stopJob(jobId) {
+    if (confirm('Stop cracking job? Progress will be saved.')) {
+        controlJob(jobId, 'stop');
+    }
+}
+
+function restartJob(jobId) {
+    if (confirm('Restart this job from the beginning?')) {
+        controlJob(jobId, 'restart');
+    }
+}
+
+function deleteJob(jobId) {
+    if (confirm('Delete this job and all its results? This cannot be undone.')) {
+        controlJob(jobId, 'delete');
+    }
+}
+
+function controlJob(jobId, action) {
+    fetch(`/api/jobs/${jobId}/${action}`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (action === 'delete') {
+                    window.location.href = '/';
+                } else {
+                    location.reload();
+                }
+            } else {
+                alert('Failed to ' + action + ' job: ' + data.error);
+            }
+        })
+        .catch(error => alert('Error: ' + error));
+}
+
+// Auto-refresh if job is running
+{% if job.status == 'running' %}
+setTimeout(() => location.reload(), 10000);
+{% endif %}
+
+// Hide passwords by default
+document.addEventListener('DOMContentLoaded', function() {
+    const passwords = document.querySelectorAll('.password');
+    passwords.forEach(password => {
+        password.style.display = 'none';
+    });
+});
+</script>
+
+<style>
+.password.hidden {
+    display: none;
+}
+
+.password-placeholder {
+    color: #666;
+    font-family: monospace;
+}
+</style>
+{% endblock %}

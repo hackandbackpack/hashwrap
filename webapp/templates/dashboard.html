@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="stats">
+    <div class="stat-card">
+        <div class="stat-number">{{ stats.total_jobs or 0 }}</div>
+        <div>Total Jobs</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ stats.running_jobs or 0 }}</div>
+        <div>Running</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ stats.completed_jobs or 0 }}</div>
+        <div>Completed</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ stats.total_cracked or 0 }}</div>
+        <div>Total Cracked</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Recent Jobs</h2>
+    
+    {% if jobs %}
+    <table>
+        <thead>
+            <tr>
+                <th>File</th>
+                <th>Hash Type</th>
+                <th>Status</th>
+                <th>Progress</th>
+                <th>Started</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for job in jobs %}
+            <tr data-job-id="{{ job.id }}">
+                <td>
+                    <strong>{{ job.filename }}</strong><br>
+                    <small>{{ job.total_hashes }} hashes</small>
+                </td>
+                <td>
+                    <span class="badge">{{ job.hash_type or 'Unknown' }}</span>
+                </td>
+                <td>
+                    <span class="status status-{{ job.status }}">{{ job.status }}</span>
+                </td>
+                <td class="progress">
+                    {% if job.total_hashes %}
+                        {{ ((job.cracked_count or 0) / job.total_hashes * 100) | round(1) }}%
+                        ({{ job.cracked_count or 0 }}/{{ job.total_hashes }})
+                    {% else %}
+                        0%
+                    {% endif %}
+                </td>
+                <td>
+                    {% if job.started_at %}
+                        {{ job.started_at }}
+                    {% else %}
+                        <em>Not started</em>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{{ url_for('job_detail', job_id=job.id) }}" class="btn btn-secondary">View</a>
+                    
+                    {% if job.status == 'queued' %}
+                        <button onclick="startJob({{ job.id }})" class="btn">Start</button>
+                    {% elif job.status == 'running' %}
+                        <button onclick="stopJob({{ job.id }})" class="btn btn-secondary">Stop</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="text-align: center; padding: 2rem; color: #888;">
+        <h3>No jobs yet</h3>
+        <p>Upload your first hash file to get started</p>
+        <a href="{{ url_for('upload_file') }}" class="btn">Upload Hash File</a>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Quick Actions</h2>
+    <p>Ready to crack some hashes? Start by uploading your hash files.</p>
+    
+    <a href="{{ url_for('upload_file') }}" class="btn">📁 Upload Hash File</a>
+    
+    <div style="margin-top: 1rem; padding: 1rem; background: rgba(0,255,65,0.1); border-radius: 5px; border-left: 4px solid #00ff41;">
+        <strong>💡 Pro Tip:</strong> HashWrap automatically detects hash types (MD5, SHA1, SHA256, NTLM, etc.) 
+        and can process multiple files simultaneously with GPU acceleration.
+    </div>
+</div>
+
+<script>
+function startJob(jobId) {
+    if (confirm('Start cracking job?')) {
+        fetch(`/api/jobs/${jobId}/start`, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Failed to start job: ' + data.error);
+                }
+            })
+            .catch(error => alert('Error: ' + error));
+    }
+}
+
+function stopJob(jobId) {
+    if (confirm('Stop cracking job?')) {
+        fetch(`/api/jobs/${jobId}/stop`, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Failed to stop job: ' + data.error);
+                }
+            })
+            .catch(error => alert('Error: ' + error));
+    }
+}
+</script>
+{% endblock %}

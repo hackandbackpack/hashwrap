@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}HashWrap - Pentest Hash Cracking{% endblock %}</title>
+    <style>
+        /* Simple, clean styling for pentesters */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+        
+        .header {
+            background: #2d2d2d;
+            padding: 1rem;
+            border-bottom: 2px solid #00ff41;
+        }
+        
+        .header h1 {
+            color: #00ff41;
+            display: inline-block;
+        }
+        
+        .nav {
+            float: right;
+            margin-top: 5px;
+        }
+        
+        .nav a {
+            color: #e0e0e0;
+            text-decoration: none;
+            margin-left: 1rem;
+            padding: 0.5rem 1rem;
+            border-radius: 3px;
+            transition: background 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #444;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .alert {
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 5px;
+            border-left: 4px solid;
+        }
+        
+        .alert-success { 
+            background: rgba(0, 255, 65, 0.1); 
+            border-color: #00ff41; 
+            color: #00ff41;
+        }
+        
+        .alert-error { 
+            background: rgba(255, 0, 0, 0.1); 
+            border-color: #ff0000; 
+            color: #ff6666;
+        }
+        
+        .card {
+            background: #2d2d2d;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            border: 1px solid #444;
+        }
+        
+        .btn {
+            background: #00ff41;
+            color: #000;
+            padding: 0.7rem 1.5rem;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        
+        .btn:hover {
+            background: #00cc33;
+            transform: translateY(-1px);
+        }
+        
+        .btn-secondary {
+            background: #666;
+            color: #fff;
+        }
+        
+        .btn-secondary:hover {
+            background: #777;
+        }
+        
+        input, textarea, select {
+            background: #3d3d3d;
+            border: 1px solid #555;
+            color: #e0e0e0;
+            padding: 0.7rem;
+            border-radius: 5px;
+            width: 100%;
+            margin: 0.5rem 0;
+        }
+        
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #00ff41;
+            box-shadow: 0 0 0 2px rgba(0, 255, 65, 0.2);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+        
+        th, td {
+            padding: 0.8rem;
+            text-align: left;
+            border-bottom: 1px solid #444;
+        }
+        
+        th {
+            background: #333;
+            color: #00ff41;
+            font-weight: bold;
+        }
+        
+        tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .status {
+            padding: 0.3rem 0.6rem;
+            border-radius: 3px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+        
+        .status-queued { background: #666; color: #fff; }
+        .status-running { background: #ffaa00; color: #000; }
+        .status-completed { background: #00ff41; color: #000; }
+        .status-failed { background: #ff4444; color: #fff; }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .stat-card {
+            background: #2d2d2d;
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #444;
+        }
+        
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #00ff41;
+        }
+        
+        .clear { clear: both; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔓 HashWrap</h1>
+        <div class="nav">
+            {% if session.user_id %}
+                <a href="{{ url_for('index') }}">Dashboard</a>
+                <a href="{{ url_for('upload_file') }}">Upload</a>
+                <a href="{{ url_for('logout') }}">Logout ({{ session.username }})</a>
+            {% endif %}
+        </div>
+        <div class="clear"></div>
+    </div>
+    
+    <div class="container">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-success">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        {% block content %}{% endblock %}
+    </div>
+    
+    <script>
+        // Auto-refresh job status every 5 seconds
+        function refreshJobStatus() {
+            const statusElements = document.querySelectorAll('[data-job-id]');
+            statusElements.forEach(element => {
+                const jobId = element.getAttribute('data-job-id');
+                fetch(`/api/jobs/${jobId}/status`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status) {
+                            element.querySelector('.status').textContent = data.status;
+                            element.querySelector('.status').className = `status status-${data.status}`;
+                            
+                            const progressElement = element.querySelector('.progress');
+                            if (progressElement) {
+                                progressElement.textContent = `${data.progress}% (${data.cracked_count}/${data.total_hashes})`;
+                            }
+                        }
+                    })
+                    .catch(error => console.log('Status update failed:', error));
+            });
+        }
+        
+        // Start auto-refresh if we have job elements
+        if (document.querySelectorAll('[data-job-id]').length > 0) {
+            setInterval(refreshJobStatus, 5000);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# Flask Web Application
+Flask==3.0.0
+Werkzeug==3.0.1
+
+# Basic utilities
+sqlite3  # Built-in with Python
+psutil==5.9.6

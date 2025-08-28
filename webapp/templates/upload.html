@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Hash File - HashWrap{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>📁 Upload Hash File</h2>
+    <p>Upload your hash files for cracking. Supported formats: MD5, SHA1, SHA256, NTLM, bcrypt, and more.</p>
+    
+    <form method="POST" enctype="multipart/form-data" style="margin-top: 2rem;">
+        <div>
+            <label for="file"><strong>Select Hash File:</strong></label>
+            <input type="file" id="file" name="file" accept=".txt,.hash,.lst" required 
+                   style="padding: 1rem; border: 2px dashed #555; background: #2d2d2d;">
+        </div>
+        
+        <div style="margin-top: 1.5rem;">
+            <button type="submit" class="btn">🚀 Upload & Queue Job</button>
+            <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h3>📋 Supported Hash Formats</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem;">
+        <div>
+            <h4 style="color: #00ff41;">Common Hashes</h4>
+            <ul style="list-style: none; padding: 0;">
+                <li>✓ MD5 (32 chars)</li>
+                <li>✓ SHA1 (40 chars)</li>
+                <li>✓ SHA256 (64 chars)</li>
+                <li>✓ SHA512 (128 chars)</li>
+            </ul>
+        </div>
+        <div>
+            <h4 style="color: #00ff41;">Windows</h4>
+            <ul style="list-style: none; padding: 0;">
+                <li>✓ NTLM hashes</li>
+                <li>✓ Domain dumps</li>
+                <li>✓ SAM files</li>
+            </ul>
+        </div>
+        <div>
+            <h4 style="color: #00ff41;">Application</h4>
+            <ul style="list-style: none; padding: 0;">
+                <li>✓ bcrypt</li>
+                <li>✓ MD5crypt</li>
+                <li>✓ SHA512crypt</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>💡 Hash File Format Examples</h3>
+    
+    <div style="margin-top: 1rem;">
+        <h4>MD5 Hashes:</h4>
+        <pre style="background: #1a1a1a; padding: 1rem; border-radius: 5px; color: #00ff41;">5d41402abc4b2a76b9719d911017c592
+098f6bcd4621d373cade4e832627b4f6
+e99a18c428cb38d5f260853678922e03</pre>
+    </div>
+    
+    <div style="margin-top: 1rem;">
+        <h4>NTLM Domain Dump:</h4>
+        <pre style="background: #1a1a1a; padding: 1rem; border-radius: 5px; color: #00ff41;">admin:1001:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+user1:1002:aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c:::</pre>
+    </div>
+    
+    <div style="margin-top: 1rem;">
+        <h4>SHA256:</h4>
+        <pre style="background: #1a1a1a; padding: 1rem; border-radius: 5px; color: #00ff41;">e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f</pre>
+    </div>
+</div>
+
+<script>
+// File upload drag and drop enhancement
+const fileInput = document.getElementById('file');
+const form = fileInput.closest('form');
+
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    form.addEventListener(eventName, preventDefaults, false);
+});
+
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+['dragenter', 'dragover'].forEach(eventName => {
+    form.addEventListener(eventName, highlight, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    form.addEventListener(eventName, unhighlight, false);
+});
+
+function highlight(e) {
+    form.classList.add('highlight');
+    form.style.background = 'rgba(0, 255, 65, 0.1)';
+}
+
+function unhighlight(e) {
+    form.classList.remove('highlight');
+    form.style.background = '';
+}
+
+form.addEventListener('drop', handleDrop, false);
+
+function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    fileInput.files = files;
+    
+    if (files.length > 0) {
+        fileInput.style.color = '#00ff41';
+        fileInput.nextElementSibling.textContent = `Selected: ${files[0].name}`;
+    }
+}
+
+// Show selected file name
+fileInput.addEventListener('change', function(e) {
+    if (e.target.files.length > 0) {
+        const fileName = e.target.files[0].name;
+        const fileSize = (e.target.files[0].size / 1024).toFixed(1);
+        e.target.style.color = '#00ff41';
+        
+        // Add file info display
+        let infoDiv = document.getElementById('file-info');
+        if (!infoDiv) {
+            infoDiv = document.createElement('div');
+            infoDiv.id = 'file-info';
+            infoDiv.style.marginTop = '0.5rem';
+            infoDiv.style.color = '#00ff41';
+            e.target.parentNode.appendChild(infoDiv);
+        }
+        infoDiv.innerHTML = `<strong>Selected:</strong> ${fileName} (${fileSize} KB)`;
+    }
+});
+</script>
+{% endblock %}

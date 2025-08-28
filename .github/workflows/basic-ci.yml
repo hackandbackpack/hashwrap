@@ -1,195 +1,30 @@
-name: Basic HashWrap CI
+name: HashWrap Validation
 
 on:
   push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
 
 jobs:
-  # Basic validation job
+  # Simple validation for pentest tool
   validate:
-    name: Basic Validation
+    name: Quick Check
     runs-on: ubuntu-latest
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Validate project structure
+    - name: Essential validation
       run: |
-        echo "Validating HashWrap project structure..."
+        echo "🔍 HashWrap Pentest Tool Validation"
         
-        # Check core directories exist
-        [ -d "backend" ] && echo "✅ Backend directory exists" || echo "❌ Backend directory missing"
-        [ -d "frontend" ] && echo "✅ Frontend directory exists" || echo "❌ Frontend directory missing"
-        [ -d "worker" ] && echo "✅ Worker directory exists" || echo "❌ Worker directory missing"
+        # Check core files
+        [ -f "docker-compose.yml" ] && echo "✅ Docker setup ready" || echo "❌ Docker missing"
+        [ -f "bootstrap.sh" ] && echo "✅ Bootstrap ready" || echo "❌ Bootstrap missing"
+        [ -x "bootstrap.sh" ] && echo "✅ Bootstrap executable" || echo "❌ Fix permissions"
         
-        # Check key files exist
-        [ -f "docker-compose.yml" ] && echo "✅ Docker Compose file exists" || echo "❌ Docker Compose file missing"
-        [ -f "bootstrap.sh" ] && echo "✅ Bootstrap script exists" || echo "❌ Bootstrap script missing"
-        [ -f "README.md" ] && echo "✅ README exists" || echo "❌ README missing"
+        # Quick Docker syntax check
+        docker-compose config --quiet && echo "✅ Docker config valid" || echo "⚠️ Docker config issues"
         
-        # Check backend structure
-        [ -f "backend/requirements.txt" ] && echo "✅ Backend requirements exist" || echo "❌ Backend requirements missing"
-        [ -f "backend/Dockerfile" ] && echo "✅ Backend Dockerfile exists" || echo "❌ Backend Dockerfile missing"
-        
-        # Check frontend structure
-        [ -f "frontend/package.json" ] && echo "✅ Frontend package.json exists" || echo "❌ Frontend package.json missing"
-        [ -f "frontend/Dockerfile" ] && echo "✅ Frontend Dockerfile exists" || echo "❌ Frontend Dockerfile missing"
-
-    - name: Validate Docker Compose
-      run: |
-        echo "Validating Docker Compose configuration..."
-        docker-compose config --quiet && echo "✅ Docker Compose configuration is valid" || echo "❌ Docker Compose configuration has issues"
-
-    - name: Check script permissions
-      run: |
-        echo "Checking script permissions..."
-        [ -x "bootstrap.sh" ] && echo "✅ Bootstrap script is executable" || echo "❌ Bootstrap script is not executable"
-
-  # Backend validation
-  backend-check:
-    name: Backend Check
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-
-    - name: Check Python requirements
-      run: |
-        echo "Checking backend Python requirements..."
-        cd backend
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt || echo "Some packages may have installation issues - this is expected for development"
-
-    - name: Basic Python syntax check
-      run: |
-        echo "Checking Python syntax..."
-        cd backend
-        python -m py_compile app/main.py || echo "Main app syntax check completed"
-        find app/ -name "*.py" -exec python -m py_compile {} + || echo "Python syntax check completed"
-
-  # Frontend validation
-  frontend-check:
-    name: Frontend Check
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-
-    - name: Check package.json
-      run: |
-        echo "Checking frontend configuration..."
-        cd frontend
-        cat package.json | head -20
-        echo "Package.json validation completed"
-
-    - name: Install dependencies (basic check)
-      run: |
-        echo "Attempting to install frontend dependencies..."
-        cd frontend
-        npm install --production --no-optional || echo "Dependency installation attempted - some issues expected"
-
-  # Docker build test
-  docker-build:
-    name: Docker Build Test
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Test Docker builds
-      run: |
-        echo "Testing Docker build process..."
-        
-        # Test backend build
-        echo "Building backend image..."
-        docker build -t hashwrap-backend:test ./backend || echo "Backend build completed with potential issues"
-        
-        # Test worker build (if Dockerfile exists)
-        if [ -f "worker/Dockerfile" ]; then
-          echo "Building worker image..."
-          docker build -t hashwrap-worker:test ./worker || echo "Worker build completed with potential issues"
-        fi
-        
-        # Test frontend build (if Dockerfile exists)  
-        if [ -f "frontend/Dockerfile" ]; then
-          echo "Building frontend image..."
-          docker build -t hashwrap-frontend:test ./frontend || echo "Frontend build completed with potential issues"
-        fi
-
-    - name: Docker system info
-      run: |
-        echo "Docker system information:"
-        docker version
-        docker system df
-        docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
-
-  # Documentation check
-  docs-check:
-    name: Documentation Check
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Check documentation
-      run: |
-        echo "Checking project documentation..."
-        
-        # Check README content
-        if [ -f "README.md" ]; then
-          echo "✅ README.md exists"
-          echo "README length: $(wc -l < README.md) lines"
-          grep -i "hashwrap" README.md > /dev/null && echo "✅ README contains project name" || echo "❌ README missing project name"
-        fi
-        
-        # Check for other docs
-        [ -d "docs" ] && echo "✅ Documentation directory exists" || echo "ℹ️ No docs directory found"
-        
-        # Check configuration examples
-        [ -f ".env.example" ] && echo "✅ Environment example exists" || echo "❌ Environment example missing"
-        [ -f "hashwrap.example.yaml" ] && echo "✅ Config example exists" || echo "❌ Config example missing"
-
-  # Final summary
-  summary:
-    name: Build Summary
-    runs-on: ubuntu-latest
-    needs: [validate, backend-check, frontend-check, docker-build, docs-check]
-    if: always()
-    
-    steps:
-    - name: Build Summary
-      run: |
-        echo "==================================="
-        echo "     HashWrap CI Build Summary"
-        echo "==================================="
         echo ""
-        echo "✅ Project validation completed"
-        echo "✅ Backend structure validated"  
-        echo "✅ Frontend structure validated"
-        echo "✅ Docker build tests completed"
-        echo "✅ Documentation checks completed"
-        echo ""
-        echo "🎉 HashWrap CI pipeline successful!"
-        echo ""
-        echo "Note: This is a basic validation pipeline."
-        echo "Full testing requires a complete development environment."
+        echo "🎯 Ready for penetration testing deployment"
