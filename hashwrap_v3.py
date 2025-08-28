@@ -23,8 +23,17 @@ from core.hash_manager import HashManager
 from core.hash_analyzer import HashAnalyzer
 from core.attack_orchestrator import AttackOrchestrator, Attack, AttackPriority
 from core.session_manager import SessionManager
+from core.enhanced_session_manager import EnhancedSessionManager, SessionStatus
 from core.security import SecurityValidator, SecureFileOperations, CommandBuilder
 from core.hash_watcher import HashFileWatcher, HashReloader
+from core.status_monitor import StatusMonitor, StatusFormat
+from core.logger import setup_logging, get_logger, log_performance
+from core.error_handler import (
+    ErrorHandler, get_error_handler, with_error_handling, error_context,
+    HashwrapError, FileAccessError, ProcessError, ResourceError, ValidationError,
+    ErrorCategory, ErrorSeverity
+)
+from core.resource_manager import get_resource_manager, cleanup_resources
 from utils.display import Display
 from utils.resource_monitor import ResourceMonitor
 
@@ -36,14 +45,39 @@ class HashwrapV3:
         self.args = args
         self.display = Display()
         
+        # Setup logging
+        log_level = getattr(args, 'log_level', 'INFO')
+        log_file = getattr(args, 'log_file', '.hashwrap_sessions/hashwrap.log')
+        setup_logging(
+            log_level=log_level,
+            log_file=log_file,
+            console=True,
+            json_format=getattr(args, 'json_logs', False)
+        )
+        self.logger = get_logger('main')
+        self.logger.info("Initializing Hashwrap v3", args=vars(args))
+        
         # Initialize security components
         self.security_config = self._load_security_config()
         self.validator = SecurityValidator(self.security_config)
         self.file_ops = SecureFileOperations(self.validator)
         self.cmd_builder = CommandBuilder(self.validator)
         
+        # Initialize error handler
+        self.error_handler = get_error_handler()
+        self._setup_error_callbacks()
+        
+        # Initialize resource manager
+        resource_config = {
+            'max_worker_threads': self.security_config.get('max_threads', 4),
+            'max_memory_gb': self.security_config.get('max_memory_gb', 8),
+            'max_requests_per_minute': self.security_config.get('max_requests_per_minute', 60)
+        }
+        self.resource_manager = get_resource_manager(resource_config)
+        
         # Initialize core components
         self.session_manager = SessionManager()
+        self.enhanced_session_manager = EnhancedSessionManager()
         self.hash_manager = None
         self.hash_analyzer = HashAnalyzer()
         self.orchestrator = AttackOrchestrator()
@@ -53,6 +87,9 @@ class HashwrapV3:
         self.hash_watcher = None
         self.hash_reloader = None
         
+        # Status monitoring
+        self.status_monitor = None
+        
         self.running = True
         
         # Setup signal handlers
@@ -60,18 +97,82 @@ class HashwrapV3:
         if sys.platform != "win32":
             signal.signal(signal.SIGTERM, self._signal_handler)
     
+    def _cleanup_resources(self):
+        """Clean up all resources."""
+        try:
+            # Clean up hash manager
+            if hasattr(self, 'hash_manager') and self.hash_manager:
+                self.hash_manager.cleanup()
+            
+            # Clean up resource manager
+            if hasattr(self, 'resource_manager') and self.resource_manager:
+                self.resource_manager.cleanup()
+            
+            # Clean up any other resources
+            cleanup_resources()
+        except Exception as e:
+            self.logger.error("Error during resource cleanup", error=e)
+    
+    def _setup_error_callbacks(self):
+        """Setup error handling callbacks."""
+        # Register callbacks for specific error categories
+        self.error_handler.register_callback(
+            ErrorCategory.FILE_ACCESS,
+            self._handle_file_access_error
+        )
+        
+        self.error_handler.register_callback(
+            ErrorCategory.PROCESS,
+            self._handle_process_error
+        )
+        
+        self.error_handler.register_callback(
+            ErrorCategory.RESOURCE,
+            self._handle_resource_error
+        )
+    
+    def _handle_file_access_error(self, context):
+        """Handle file access errors with user notification."""
+        self.display.error(f"File access error: {context.error}")
+        if context.context_data.get('file_path'):
+            self.display.info(f"  File: {context.context_data['file_path']}")
+    
+    def _handle_process_error(self, context):
+        """Handle process errors."""
+        self.display.error(f"Process error: {context.error}")
+        if context.context_data.get('process_name'):
+            self.display.info(f"  Process: {context.context_data['process_name']}")
+    
+    def _handle_resource_error(self, context):
+        """Handle resource errors."""
+        self.display.warning(f"Resource limitation: {context.error}")
+        if context.context_data.get('resource_type') == 'gpu':
+            self.display.info("  Falling back to CPU mode")
+    
+    @with_error_handling("Load security configuration", reraise=False, default_return=None)
     def _load_security_config(self) -> Dict[str, Any]:
         """Load security configuration."""
         config_path = Path("hashwrap_security.json")
         if config_path.exists():
             try:
                 with open(config_path, 'r') as f:
-                    return json.load(f)
-            except:
-                pass
+                    config = json.load(f)
+                    self.logger.info("Loaded security configuration", path=str(config_path))
+                    return config
+            except json.JSONDecodeError as e:
+                raise ValidationError(
+                    f"Invalid JSON in security config: {e}",
+                    field="security_config",
+                    value=str(config_path)
+                )
+            except IOError as e:
+                raise FileAccessError(
+                    f"Cannot read security config: {e}",
+                    file_path=str(config_path)
+                )
         
         # Default security config
-        return {
+        default_config = {
             'allowed_directories': [
                 str(Path.cwd()),
                 str(Path.cwd() / "wordlists"),
@@ -81,8 +182,40 @@ class HashwrapV3:
                 "/usr/share/hashcat"
             ],
             'max_file_size': 10 * 1024 * 1024 * 1024,  # 10GB
-            'enable_hot_reload': True
+            'enable_hot_reload': True,
+            'hashcat_timeout': 3600
         }
+        
+        self.logger.info("Using default security configuration")
+        return default_config
+    
+    def _cleanup_on_error(self):
+        """Cleanup function called on critical errors."""
+        try:
+            # Stop any running monitors
+            if self.status_monitor:
+                self.status_monitor.stop_monitoring()
+            
+            # Stop hash watcher
+            if self.hash_watcher:
+                self.hash_watcher.stop()
+            
+            # Save session state
+            if self.session_manager.current_session:
+                self.session_manager.update_session({
+                    'status': 'error',
+                    'error_time': datetime.now().isoformat(),
+                    'error_summary': self.error_handler.get_error_summary()
+                })
+            
+            # Clean up temporary files
+            if hasattr(self, 'hash_manager') and self.hash_manager:
+                self.hash_manager.cleanup()
+            
+            # Clean up resources
+            self._cleanup_resources()
+        except Exception as e:
+            self.logger.error("Error during cleanup", error=e)
     
     def _signal_handler(self, signum, frame):
         """Handle interruption gracefully."""
@@ -98,6 +231,9 @@ class HashwrapV3:
                 'status': 'paused',
                 'pause_time': datetime.now().isoformat()
             })
+        
+        # Cleanup resources
+        self._cleanup_resources()
         sys.exit(0)
     
     def run(self):
@@ -128,83 +264,116 @@ class HashwrapV3:
             raise
     
     def _run_auto(self):
-        """Fully automated mode with security enhancements."""
-        try:
-            # Validate hash file path
-            hash_file_path = self.validator.validate_file_path(
-                self.args.hash_file, 
-                must_exist=True
-            )
-            hash_file = str(hash_file_path)
+        """Fully automated mode with security enhancements and session support."""
+        # Check for restore mode
+        if self.args.restore:
+            if not self.args.session:
+                self.display.error("--restore requires --session NAME")
+                return
             
-        except (ValueError, FileNotFoundError) as e:
-            self.display.error(f"Invalid hash file: {e}")
+            self.logger.info("Attempting to restore session", session=self.args.session)
+            with error_context("Restore session", self.error_handler):
+                self._restore_session(self.args.session)
             return
         
-        self.display.header("HASHWRAP v3 - SECURE AUTO MODE")
-        self.display.info(f"Target: {hash_file}")
+        # Use error context for the entire auto mode operation
+        with error_context("Auto mode execution", self.error_handler,
+                         cleanup=self._cleanup_on_error):
+            try:
+                # Validate hash file path
+                hash_file_path = self.validator.validate_file_path(
+                    self.args.hash_file, 
+                    must_exist=True
+                )
+                hash_file = str(hash_file_path)
+                
+            except (ValueError, FileNotFoundError) as e:
+                raise FileAccessError(
+                    f"Invalid hash file: {e}",
+                    file_path=self.args.hash_file,
+                    alternatives=[
+                        str(Path.cwd() / "hashes" / Path(self.args.hash_file).name),
+                        str(Path.cwd() / Path(self.args.hash_file).name)
+                    ],
+                    create_if_missing=False
+                )
+            
+            self.display.header("HASHWRAP v3 - SECURE AUTO MODE")
+            self.display.info(f"Target: {hash_file}")
+            
+            # Step 1: Analyze hashes
+            self.display.section("Hash Analysis")
+            analysis = self.hash_analyzer.analyze_file(hash_file)
+            
+            self.display.info(f"Total hashes: {analysis['total_hashes']}")
+            for hash_type, info in analysis['detected_types'].items():
+                self.display.success(f"  {hash_type}: {info['count']} hashes (mode {info['mode']})")
+            
+            if analysis['unknown_hashes']:
+                self.display.warning(f"  Unknown: {len(analysis['unknown_hashes'])} hashes")
         
-        # Step 1: Analyze hashes
-        self.display.section("Hash Analysis")
-        analysis = self.hash_analyzer.analyze_file(hash_file)
-        
-        self.display.info(f"Total hashes: {analysis['total_hashes']}")
-        for hash_type, info in analysis['detected_types'].items():
-            self.display.success(f"  {hash_type}: {info['count']} hashes (mode {info['mode']})")
-        
-        if analysis['unknown_hashes']:
-            self.display.warning(f"  Unknown: {len(analysis['unknown_hashes'])} hashes")
-        
-        # Step 2: Create session
-        self.display.section("Session Management")
-        
-        # Create secure potfile path
-        potfile_path = self.validator.create_secure_temp_file(
-            prefix="hashwrap_pot_",
-            suffix=".pot"
-        )
-        
-        config = {
+            # Step 2: Create session
+            self.display.section("Session Management")
+            
+            # Create secure potfile path
+            potfile_path = self.validator.create_secure_temp_file(
+                prefix="hashwrap_pot_",
+                suffix=".pot"
+            )
+            
+            config = {
             'hash_file': hash_file,
             'potfile': potfile_path,
             'hashcat_path': 'hashcat',
             'mode': 'auto',
-            'analysis': analysis
-        }
-        
-        session_id = self.session_manager.create_session(hash_file, config)
-        self.display.success(f"Created session: {session_id}")
-        
-        # Step 3: Initialize hash manager
-        self.hash_manager = HashManager(hash_file, config['potfile'])
-        stats = self.hash_manager.get_statistics()
-        
-        self.session_manager.update_session({
-            'statistics': {
-                'total_hashes': stats['total_hashes'],
-                'cracked_hashes': stats['cracked'],
-                'time_elapsed': 0
+            'analysis': analysis,
+            'workload_profile': self.args.workload_profile,
+            'status_timer': self.args.status_timer,
+            'enable_hot_reload': self.security_config.get('enable_hot_reload', True)
             }
-        })
-        
-        # Step 4: Setup hot-reload if enabled
-        if self.security_config.get('enable_hot_reload', True):
-            self._setup_hot_reload()
-        
-        # Step 5: Generate attack plan
-        self.display.section("Attack Planning")
-        available_resources = self.resource_monitor.get_resources()
-        attacks = self.orchestrator.generate_attack_plan(analysis, available_resources)
-        
-        self.display.info(f"Generated {len(attacks)} attack strategies")
-        
-        # Save pending attacks to session
-        self.session_manager.update_session({
-            'pending_attacks': [{'name': a.name, 'priority': a.priority} for a in attacks]
-        })
-        
-        # Step 6: Execute attacks
-        self._execute_attacks_secure()
+            
+            # Use enhanced session manager if session name provided
+            if self.args.session:
+            session_id = self.enhanced_session_manager.create_session(
+                hash_file, 
+                config,
+                session_name=self.args.session
+            )
+                self.display.success(f"Created named session: {session_id}")
+            else:
+                session_id = self.session_manager.create_session(hash_file, config)
+                self.display.success(f"Created session: {session_id}")
+            
+            # Step 3: Initialize hash manager
+            self.hash_manager = HashManager(hash_file, config['potfile'])
+            stats = self.hash_manager.get_statistics()
+            
+            self.session_manager.update_session({
+                'statistics': {
+                    'total_hashes': stats['total_hashes'],
+                    'cracked_hashes': stats['cracked'],
+                    'time_elapsed': 0
+                }
+            })
+            
+            # Step 4: Setup hot-reload if enabled
+            if self.security_config.get('enable_hot_reload', True):
+                self._setup_hot_reload()
+            
+            # Step 5: Generate attack plan
+            self.display.section("Attack Planning")
+            available_resources = self.resource_monitor.get_resources()
+            attacks = self.orchestrator.generate_attack_plan(analysis, available_resources)
+            
+            self.display.info(f"Generated {len(attacks)} attack strategies")
+            
+            # Save pending attacks to session
+            self.session_manager.update_session({
+                'pending_attacks': [{'name': a.name, 'priority': a.priority} for a in attacks]
+            })
+            
+            # Step 6: Execute attacks
+            self._execute_attacks_secure()
     
     def _setup_hot_reload(self):
         """Setup hash file watching and hot-reload."""
@@ -317,11 +486,100 @@ class HashwrapV3:
         # Final summary
         self._show_final_summary()
     
-    def _run_hashcat_attack_secure(self, attack: Attack) -> Dict[str, Any]:
-        """Execute a single hashcat attack with security measures."""
-        try:
+    def _execute_attacks_from_queue(self, attacks: List[Attack], config: Dict[str, Any]):
+        """Execute attacks from a restored queue."""
+        self.display.section("Attack Execution")
+        self.display.info(f"Executing {len(attacks)} attacks")
+        
+        # Add attacks to orchestrator queue
+        for attack in attacks:
+            self.orchestrator.add_attack(attack)
+        
+        # Update enhanced session manager
+        self.enhanced_session_manager.set_attack_queue(
+            [{'name': a.name, 'priority': a.priority, 
+              'attack_type': a.attack_type, 'wordlist': a.wordlist,
+              'rules': a.rules, 'mask': a.mask, 'mode': a.mode} 
+             for a in attacks]
+        )
+        
+        # Execute attacks
+        start_time = datetime.now()
+        
+        while self.running and self.hash_manager.should_continue():
+            attack = self.orchestrator.get_next_attack()
+            if not attack:
+                break
+            
+            self.display.section(f"Attack: {attack.name}")
+            
+            # Update session
+            self.enhanced_session_manager.start_attack({
+                'name': attack.name,
+                'priority': attack.priority,
+                'attack_type': attack.attack_type
+            })
+            
             # Build attack parameters
             attack_params = {
+                'mode': attack.mode,
+                'attack_type': attack.attack_type,
+                'wordlist': attack.wordlist,
+                'rules': attack.rules,
+                'mask': attack.mask,
+                'potfile': config.get('potfile'),
+                'session': config.get('hashcat_session'),
+                'restore': config.get('restore', False),
+                'status_timer': config.get('status_timer', 10),
+                'workload_profile': config.get('workload_profile', 3)
+            }
+            
+            # Run attack
+            results = self._run_hashcat_attack_secure(attack)
+            
+            # Update progress
+            progress = self.hash_manager.update_progress(attack.name)
+            
+            # Update session
+            self.enhanced_session_manager.complete_attack(
+                {'name': attack.name},
+                {'success': results.get('success', False),
+                 'newly_cracked': len(progress['newly_cracked'])}
+            )
+            
+            # Display progress
+            if progress['newly_cracked']:
+                self.display.success(f"Cracked {len(progress['newly_cracked'])} new hashes!")
+            
+            self.display.info(f"Progress: {progress['total_cracked']}/{self.hash_manager.get_statistics()['total_hashes']} "
+                             f"({self.hash_manager.get_statistics()['success_rate']:.1f}%)")
+            
+            # Clear restore flag after first attack
+            if config.get('restore'):
+                config['restore'] = False
+            
+            # Checkpoint session
+            self.enhanced_session_manager.checkpoint()
+        
+        # Final summary
+        self._show_final_summary()
+    
+    @log_performance("hashcat_attack")
+    @with_error_handling("Execute hashcat attack", reraise=True)
+    def _run_hashcat_attack_secure(self, attack: Attack) -> Dict[str, Any]:
+        """Execute a single hashcat attack with security measures."""
+        self.logger.info("Starting hashcat attack", 
+                        attack_name=attack.name,
+                        attack_type=attack.attack_type,
+                        priority=attack.priority)
+        
+        # Use error context for better recovery handling
+        with error_context(f"Hashcat attack: {attack.name}", self.error_handler,
+                          attack=attack, 
+                          cleanup=lambda: self._cleanup_failed_attack(attack)):
+            try:
+                # Build attack parameters
+                attack_params = {
                 'mode': attack.mode,
                 'attack_type': attack.attack_type,
                 'wordlist': attack.wordlist,
@@ -340,11 +598,21 @@ class HashwrapV3:
             display_cmd = [self.validator.sanitize_command_argument(arg) for arg in cmd]
             self.display.debug(f"Command: {' '.join(display_cmd)}")
             
-            # Run hashcat with improved timeout handling
+            # Run hashcat with improved timeout handling and resource management
             import signal
             
             # Configure timeout from security config
             timeout_seconds = self.security_config.get('hashcat_timeout', 3600)
+            
+            # Check resources before starting
+            required_memory_mb = self.security_config.get('hashcat_memory_mb', 1024)
+            if not self.resource_manager.check_resources(memory_mb=required_memory_mb):
+                raise ResourceError(
+                    "Insufficient resources to run hashcat",
+                    resource_type='memory',
+                    required=f"{required_memory_mb}MB",
+                    available=self.resource_manager.monitor.get_resource_usage()
+                )
             
             # Create process with proper group handling for cleanup
             if sys.platform == 'win32':
@@ -369,6 +637,29 @@ class HashwrapV3:
                     env={**os.environ, 'HASHCAT_BRAIN_HOST': 'disabled'},
                     preexec_fn=os.setsid
                 )
+            
+            # Setup status monitoring if requested
+            if hasattr(self.args, 'status_json') and (self.args.status_json or self.args.status_file):
+                # Initialize status monitor
+                format_type = StatusFormat.JSON if self.args.status_json else StatusFormat.HUMAN
+                self.status_monitor = StatusMonitor(
+                    format_type=format_type,
+                    update_interval=config.get('status_timer', 10),
+                    output_file=self.args.status_file
+                )
+                
+                # Start monitoring
+                attack_info = {
+                    'name': attack.name,
+                    'hash_type': f"Mode {attack.mode}" if attack.mode else "Unknown",
+                    'hash_file': hash_file,
+                    'wordlist': attack.wordlist,
+                    'rules': attack.rules,
+                    'mask': attack.mask
+                }
+                
+                session_id = self.enhanced_session_manager.current_session.session_id if self.enhanced_session_manager.current_session else "default"
+                self.status_monitor.start_monitoring(process, session_id, attack_info)
             
             # Monitor progress in background
             monitor_thread = threading.Thread(
@@ -413,6 +704,15 @@ class HashwrapV3:
             if monitor_thread.is_alive():
                 self.display.warning("Monitor thread did not terminate cleanly")
             
+            # Stop status monitoring if active
+            if self.status_monitor:
+                self.status_monitor.stop_monitoring()
+                
+                # Export summary if status file was specified
+                if self.args.status_file:
+                    summary_file = self.args.status_file.replace('.json', '_summary.json')
+                    self.status_monitor.export_summary(summary_file)
+            
             # Clean up temp file securely
             if os.path.exists(remaining_file):
                 self.file_ops.delete_file_secure(remaining_file)
@@ -424,12 +724,60 @@ class HashwrapV3:
                 'stderr': stderr
             }
             
+            except subprocess.TimeoutExpired as e:
+                raise ProcessError(
+                    f"Attack '{attack.name}' timed out",
+                    process_name="hashcat",
+                    return_code=-1,
+                    timeout=timeout_seconds
+                )
+            except subprocess.CalledProcessError as e:
+                raise ProcessError(
+                    f"Hashcat failed with code {e.returncode}",
+                    process_name="hashcat",
+                    return_code=e.returncode,
+                    stderr=e.stderr
+                )
+            except FileNotFoundError as e:
+                raise FileAccessError(
+                    f"Required file not found: {e}",
+                    file_path=str(e.filename) if hasattr(e, 'filename') else None
+                )
+            except MemoryError as e:
+                raise ResourceError(
+                    "Out of memory during attack",
+                    resource_type="memory",
+                    attack=attack.name
+                )
+            except Exception as e:
+                # Log unexpected errors
+                self.logger.error("Unexpected error in attack", error=e, attack=attack.name)
+                raise HashwrapError(
+                    f"Attack failed: {str(e)}",
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.UNKNOWN,
+                    context={'attack': attack.name, 'error_type': type(e).__name__}
+                )
+    
+    def _cleanup_failed_attack(self, attack: Attack):
+        """Cleanup after a failed attack."""
+        try:
+            # Stop status monitor
+            if self.status_monitor:
+                self.status_monitor.stop_monitoring()
+                self.status_monitor = None
+            
+            # Update session to mark attack as failed
+            if self.enhanced_session_manager.current_session:
+                self.enhanced_session_manager.complete_attack(
+                    {'name': attack.name},
+                    {'success': False, 'error': True}
+                )
+            
+            # Log failure
+            self.logger.warning("Attack cleanup completed", attack=attack.name)
         except Exception as e:
-            self.display.error(f"Attack failed: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+            self.logger.error("Error during attack cleanup", error=e)
     
     def _monitor_attack_progress(self, process):
         """Monitor attack progress in background."""
@@ -615,6 +963,74 @@ class HashwrapV3:
         # Continue execution
         self._execute_attacks_secure()
     
+    def _restore_session(self, session_name: str):
+        """Restore a previous session using enhanced session manager."""
+        self.display.section("Session Restore")
+        
+        # Load session state
+        session_state = self.enhanced_session_manager.resume_session(session_name)
+        if not session_state:
+            self.display.error(f"Could not find session: {session_name}")
+            return
+        
+        # Display session info
+        self.display.info(f"Restored session: {session_state.session_id}")
+        self.display.info(f"Status: {session_state.status}")
+        self.display.info(f"Hash file: {session_state.hash_file}")
+        self.display.info(f"Progress: {session_state.cracked_hashes}/{session_state.total_hashes} "
+                         f"({(session_state.cracked_hashes/session_state.total_hashes*100):.1f}%)")
+        
+        # Validate hash file still exists
+        try:
+            hash_file_path = self.validator.validate_file_path(
+                session_state.hash_file,
+                must_exist=True
+            )
+        except Exception as e:
+            self.display.error(f"Original hash file no longer accessible: {e}")
+            return
+        
+        # Initialize components
+        self.hash_manager = HashManager(
+            session_state.hash_file, 
+            session_state.potfile,
+            streaming_mode=True if session_state.total_hashes > 1000000 else False
+        )
+        
+        # Setup hot-reload if enabled
+        if session_state.hot_reload_enabled:
+            self._setup_hot_reload()
+        
+        # Check for hashcat restore file
+        restore_file = self.enhanced_session_manager.get_restore_file()
+        if restore_file:
+            self.display.info(f"Found hashcat restore file: {restore_file}")
+            # Pass restore flag to hashcat
+            session_state.config['restore'] = True
+        
+        # Restore attack queue
+        if session_state.pending_attacks:
+            self.display.info(f"Resuming with {len(session_state.pending_attacks)} pending attacks")
+            
+            # Convert to Attack objects
+            attacks = []
+            for attack_data in session_state.pending_attacks:
+                attack = Attack(
+                    priority=attack_data.get('priority', 99),
+                    name=attack_data.get('name', 'Unknown'),
+                    attack_type=attack_data.get('attack_type', 'dictionary'),
+                    wordlist=attack_data.get('wordlist'),
+                    rules=attack_data.get('rules'),
+                    mask=attack_data.get('mask'),
+                    mode=attack_data.get('mode')
+                )
+                attacks.append(attack)
+            
+            # Execute remaining attacks
+            self._execute_attacks_from_queue(attacks, session_state.config)
+        else:
+            self.display.warning("No pending attacks found in session")
+    
     def _show_status(self):
         """Show status of all sessions."""
         self.display.header("Hashwrap Sessions")
@@ -662,12 +1078,27 @@ Hot-Reload:
         """
     )
     
+    # Global arguments
+    parser.add_argument('--log-level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                       default='INFO', help='Set logging level (default: INFO)')
+    parser.add_argument('--log-file', help='Log file path (default: .hashwrap_sessions/hashwrap.log)')
+    parser.add_argument('--json-logs', action='store_true', help='Use JSON format for log files')
+    
     subparsers = parser.add_subparsers(dest='command', help='Commands')
     
     # Auto mode
     auto_parser = subparsers.add_parser('auto', help='Fully automated cracking')
     auto_parser.add_argument('action', choices=['crack'], help='Action to perform')
     auto_parser.add_argument('hash_file', help='File containing hashes')
+    auto_parser.add_argument('--session', help='Session name for checkpoint/restore')
+    auto_parser.add_argument('--restore', action='store_true', help='Restore previous session')
+    auto_parser.add_argument('--workload-profile', '-w', type=int, choices=[1, 2, 3, 4],
+                            default=3, help='Workload profile (1=low, 2=default, 3=high, 4=nightmare)')
+    auto_parser.add_argument('--status-timer', type=int, default=10,
+                            help='Seconds between status updates')
+    auto_parser.add_argument('--status-json', action='store_true',
+                            help='Output status updates in JSON format')
+    auto_parser.add_argument('--status-file', help='Write status updates to file')
     
     # Analyze mode
     analyze_parser = subparsers.add_parser('analyze', help='Analyze hash file')

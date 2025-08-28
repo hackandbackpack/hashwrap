@@ -2,6 +2,8 @@ import re
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
 
+from .pattern_cache import get_pattern_cache, HashPatterns
+
 
 class HashAnalyzer:
     """Intelligent hash type detection and analysis."""
@@ -81,6 +83,15 @@ class HashAnalyzer:
     def __init__(self):
         self.detected_types = defaultdict(int)
         self.hash_samples = defaultdict(list)
+        # Pre-compile all patterns for better performance
+        self._compile_patterns()
+    
+    def _compile_patterns(self):
+        """Pre-compile all hash patterns using the pattern cache."""
+        pattern_cache = get_pattern_cache()
+        # Warm up the cache with all patterns
+        for pattern in self.HASH_PATTERNS.keys():
+            pattern_cache.get_pattern(pattern, re.IGNORECASE)
         
     def analyze_file(self, hash_file: str) -> Dict[str, any]:
         """Analyze a hash file and detect hash types."""
@@ -126,18 +137,38 @@ class HashAnalyzer:
         return results
     
     def _detect_hash_type(self, hash_string: str) -> Optional[Dict[str, any]]:
-        """Detect the type of a single hash."""
+        """Detect the type of a single hash using optimized pattern matching."""
         hash_string = hash_string.strip()
+        
+        # Use pattern cache for better performance
+        pattern_cache = get_pattern_cache()
         
         # Check against all patterns
         matches = []
         for pattern, info in self.HASH_PATTERNS.items():
-            if re.match(pattern, hash_string, re.IGNORECASE):
+            if pattern_cache.match(pattern, hash_string, re.IGNORECASE):
                 matches.append(info.copy())
         
         # If multiple matches, return the one with highest confidence
         if matches:
             return max(matches, key=lambda x: x['confidence'])
+        
+        # Use HashPatterns for quick type detection
+        detected_type = HashPatterns.match_hash_type(hash_string)
+        if detected_type:
+            # Map to our hash info
+            type_mapping = {
+                'md5': {'name': 'MD5', 'mode': 0, 'confidence': 0.9},
+                'sha1': {'name': 'SHA1', 'mode': 100, 'confidence': 0.9},
+                'sha256': {'name': 'SHA256', 'mode': 1400, 'confidence': 0.9},
+                'sha512': {'name': 'SHA512', 'mode': 1700, 'confidence': 0.9},
+                'bcrypt': {'name': 'bcrypt', 'mode': 3200, 'confidence': 1.0},
+                'mysql': {'name': 'MySQL 4.1+', 'mode': 300, 'confidence': 1.0},
+                'md5_salt': {'name': 'MD5 with salt', 'mode': 10, 'confidence': 0.9},
+                'sha1_salt': {'name': 'SHA1 with salt', 'mode': 110, 'confidence': 0.9},
+            }
+            if detected_type in type_mapping:
+                return type_mapping[detected_type]
         
         # Additional heuristics for common formats
         if ':' in hash_string:

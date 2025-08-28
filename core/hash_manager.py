@@ -33,20 +33,38 @@ class HashManager:
         
     def _load_initial_state(self):
         """Load initial hashes and check potfile for already cracked ones."""
-        # Load all hashes from file
+        # Load all hashes from file - default to streaming for large files
         if os.path.exists(self.hash_file):
-            if self.streaming_mode and self.stream_processor:
-                # Streaming mode: count hashes without loading all into memory
-                self.total_hash_count = self.stream_processor.count_hashes(self.hash_file)
-                # Only load a sample for quick analysis
-                for batch in self.stream_processor.stream_hashes(self.hash_file, batch_size=10000):
-                    self.original_hashes.update(batch)
-                    if len(self.original_hashes) >= 100000:  # Limit sample size
-                        break
+            file_size = os.path.getsize(self.hash_file)
+            
+            # Use streaming for files over 50MB or if explicitly requested
+            if self.streaming_mode or file_size > 50 * 1024 * 1024:
+                if not self.stream_processor:
+                    from .streaming_hash_processor import StreamingHashProcessor
+                    self.stream_processor = StreamingHashProcessor()
+                
+                try:
+                    # Streaming mode: count hashes without loading all into memory
+                    self.total_hash_count = self.stream_processor.count_hashes(self.hash_file)
+                    
+                    # Only load a sample for initial statistics
+                    sample_size = min(100000, self.total_hash_count)
+                    for batch in self.stream_processor.stream_hashes(self.hash_file, batch_size=10000):
+                        self.original_hashes.update(batch)
+                        if len(self.original_hashes) >= sample_size:
+                            break
+                    
+                    # Mark that we're using streaming
+                    self.streaming_mode = True
+                    self.logger.info(f"Using streaming mode for large hash file ({file_size / 1024 / 1024:.1f}MB)")
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to use streaming mode: {e}")
+                    # Fall back to traditional loading for small files
+                    self._load_hashes_traditional()
             else:
-                # Traditional mode: load all hashes
-                with open(self.hash_file, 'r', encoding='utf-8', errors='ignore') as f:
-                    self.original_hashes = {line.strip() for line in f if line.strip()}
+                # Traditional mode for small files
+                self._load_hashes_traditional()
         
         # Load already cracked hashes from potfile
         if os.path.exists(self.potfile):
@@ -61,6 +79,11 @@ class HashManager:
         # Calculate remaining hashes
         cracked_hash_values = set(self.cracked_hashes.keys())
         self.remaining_hashes = self.original_hashes - cracked_hash_values
+    
+    def _load_hashes_traditional(self):
+        """Load all hashes into memory (for small files)."""
+        with open(self.hash_file, 'r', encoding='utf-8', errors='ignore') as f:
+            self.original_hashes = {line.strip() for line in f if line.strip()}
         
     def update_progress(self, attack_name: str = None) -> Dict[str, any]:
         """Update progress by checking potfile for new cracks."""
@@ -125,12 +148,51 @@ class HashManager:
         return len(self.remaining_hashes) > 0
     
     def get_remaining_hashes_file(self) -> str:
-        """Create a temporary file with only uncracked hashes for efficiency."""
-        temp_file = f"{self.hash_file}.remaining"
-        with open(temp_file, 'w') as f:
-            for hash_val in self.remaining_hashes:
-                f.write(f"{hash_val}\n")
-        return temp_file
+        """Create a secure temporary file with only uncracked hashes for efficiency."""
+        import tempfile
+        import os
+        
+        # Create secure temporary file
+        fd, temp_file = tempfile.mkstemp(prefix="hashwrap_remaining_", suffix=".txt")
+        
+        try:
+            # Write hashes to the temporary file
+            with os.fdopen(fd, 'w') as f:
+                if self.streaming_mode and self.stream_processor:
+                    # In streaming mode, filter hashes on the fly
+                    cracked_set = set(self.cracked_hashes.keys())
+                    written_count = 0
+                    
+                    for batch in self.stream_processor.stream_hashes(self.hash_file, batch_size=10000):
+                        for hash_val in batch:
+                            if hash_val not in cracked_set:
+                                f.write(f"{hash_val}\n")
+                                written_count += 1
+                    
+                    self.logger.debug(f"Wrote {written_count} uncracked hashes to temp file")
+                else:
+                    # Traditional mode - use remaining_hashes set
+                    for hash_val in self.remaining_hashes:
+                        f.write(f"{hash_val}\n")
+            
+            # Set restrictive permissions (owner read/write only)
+            os.chmod(temp_file, 0o600)
+            
+            # Track temp file for cleanup
+            if not hasattr(self, '_temp_files'):
+                self._temp_files = []
+            self._temp_files.append(temp_file)
+            
+            return temp_file
+        except Exception:
+            # Clean up on error
+            try:
+                os.close(fd)
+            except:
+                pass
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+            raise
     
     def analyze_cracked_passwords(self) -> Dict[str, any]:
         """Analyze patterns in cracked passwords to inform future attacks."""
@@ -240,3 +302,22 @@ class HashManager:
                 self.new_hashes_queue.put(added_count)
         
         return added_count
+    
+    def cleanup(self):
+        """Clean up temporary files created by this instance."""
+        if hasattr(self, '_temp_files'):
+            for temp_file in self._temp_files:
+                try:
+                    if os.path.exists(temp_file):
+                        # Overwrite with random data before deletion for security
+                        with open(temp_file, 'wb') as f:
+                            f.write(os.urandom(os.path.getsize(temp_file)))
+                        os.unlink(temp_file)
+                except Exception:
+                    # Best effort cleanup
+                    pass
+            self._temp_files.clear()
+    
+    def __del__(self):
+        """Ensure cleanup on deletion."""
+        self.cleanup()

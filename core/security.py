@@ -7,6 +7,8 @@ from typing import List, Optional, Dict, Any
 import hashlib
 import tempfile
 
+from .pattern_cache import HashPatterns, is_valid_hash_cached, validate_path_cached
+
 
 class SecurityValidator:
     """Comprehensive security validation for all inputs."""
@@ -70,25 +72,35 @@ class SecurityValidator:
             raise FileNotFoundError(f"File not found: {filepath}")
         
         # Check if path is within allowed directories
-        is_allowed = False
-        path_str = str(path).lower() if sys.platform == 'win32' else str(path)
+        # Resolve symlinks to prevent symlink attacks
+        try:
+            real_path = path.resolve(strict=False)
+        except (OSError, RuntimeError) as e:
+            raise ValueError(f"Cannot resolve path: {filepath} - {e}")
         
+        # Check if resolved path is within allowed directories
+        is_allowed = False
         for allowed_dir in self.allowed_dirs:
-            allowed_str = str(allowed_dir).lower() if sys.platform == 'win32' else str(allowed_dir)
             try:
-                # Check if path starts with allowed directory
-                if path_str.startswith(allowed_str):
-                    is_allowed = True
-                    break
-                # Also try relative_to for more robust check
-                path.relative_to(allowed_dir)
-                is_allowed = True
-                break
-            except ValueError:
+                # Use is_relative_to for secure validation (Python 3.9+)
+                # For older Python, use the try/except pattern with relative_to
+                try:
+                    if hasattr(real_path, 'is_relative_to'):
+                        if real_path.is_relative_to(allowed_dir):
+                            is_allowed = True
+                            break
+                    else:
+                        # Fallback for Python < 3.9
+                        real_path.relative_to(allowed_dir)
+                        is_allowed = True
+                        break
+                except ValueError:
+                    continue
+            except Exception:
                 continue
         
         if not is_allowed:
-            raise ValueError(f"Path '{filepath}' is outside allowed directories")
+            raise ValueError(f"Path '{filepath}' is outside allowed directories (resolved to: {real_path})")
         
         # Check file size if it exists
         if path.exists() and path.is_file():
@@ -98,22 +110,27 @@ class SecurityValidator:
         return path
     
     def validate_hash_format(self, hash_string: str) -> str:
-        """Validate hash string format."""
+        """Validate hash string format with strict security checks using cached patterns."""
         if not hash_string:
             raise ValueError("Empty hash string")
         
         # Remove whitespace
         hash_string = hash_string.strip()
         
-        # Basic validation - alphanumeric plus common hash characters
-        if not re.match(r'^[a-fA-F0-9:$*\-\._/=+@!#%^&(){}[\]<>?\\|~`a-zA-Z]+$', hash_string):
-            raise ValueError(f"Invalid characters in hash: {hash_string[:50]}")
-        
-        # Length check
+        # Length check first
         if len(hash_string) > 1024:  # Reasonable max for any hash format
             raise ValueError(f"Hash string too long: {len(hash_string)} characters")
         
-        return hash_string
+        # Use cached validation for performance
+        if is_valid_hash_cached(hash_string):
+            return hash_string
+        
+        # For backward compatibility, allow a restricted set of characters
+        # but only if it looks like a hash
+        if re.match(r'^[a-fA-F0-9:$.*\-_/=+]+$', hash_string) and len(hash_string) >= 8:
+            return hash_string
+        
+        raise ValueError(f"Invalid hash format: {hash_string[:50]}")
     
     def sanitize_command_argument(self, arg: str) -> str:
         """Sanitize command line arguments to prevent injection."""
@@ -128,13 +145,15 @@ class SecurityValidator:
         if not name:
             raise ValueError("Empty attack name")
         
-        # Allow only safe characters
-        if not re.match(r'^[a-zA-Z0-9_\-\. ]+$', name):
-            raise ValueError(f"Invalid attack name: {name}")
-        
-        # Length limit
+        # Length limit first
         if len(name) > 255:
             raise ValueError(f"Attack name too long: {len(name)} characters")
+        
+        # Use optimized pattern for filename validation
+        # Allow spaces in attack names
+        safe_name = name.replace(' ', '_')
+        if not HashPatterns.is_valid_filename(safe_name):
+            raise ValueError(f"Invalid attack name: {name}")
         
         return name
     
@@ -295,12 +314,17 @@ class CommandBuilder:
         
         # Add mask (sanitized)
         if 'mask' in attack_params and attack_params['mask']:
-            # Validate mask format
+            # Validate mask format using optimized pattern
             mask = attack_params['mask']
-            if re.match(r'^[\?ludsahHx\d]+$', mask):
-                cmd.append(mask)
-            else:
-                raise ValueError(f"Invalid mask format: {mask}")
+            if not HashPatterns.is_valid_mask(mask):
+                # Get specific invalid characters for better error message
+                SAFE_MASK_CHARS = set('?ludsahHx0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
+                invalid_chars = set(mask) - SAFE_MASK_CHARS
+                raise ValueError(f"Invalid mask characters detected: {invalid_chars}")
+            if len(mask) > 256:  # Prevent excessively long masks
+                raise ValueError(f"Mask too long: {len(mask)} characters (max 256)")
+            # Use shlex.quote for additional safety
+            cmd.append(shlex.quote(mask))
         
         # Add potfile
         if 'potfile' in attack_params:
@@ -312,5 +336,29 @@ class CommandBuilder:
         
         # Add safe static options
         cmd.extend(['--quiet', '-w', '3', '-O'])
+        
+        # Add session support
+        if 'session' in attack_params and attack_params['session']:
+            # Validate session name using optimized pattern
+            session_name = attack_params['session']
+            if not HashPatterns.is_valid_session_name(session_name):
+                raise ValueError(f"Invalid session name: {session_name}. Only alphanumeric, underscore, and dash allowed.")
+            if len(session_name) > 64:
+                raise ValueError(f"Session name too long: {len(session_name)} characters (max 64)")
+            cmd.extend(['--session', shlex.quote(session_name)])
+        
+        # Add restore support
+        if 'restore' in attack_params and attack_params['restore']:
+            cmd.append('--restore')
+        
+        # Add status timer
+        if 'status_timer' in attack_params:
+            cmd.extend(['--status-timer', str(int(attack_params['status_timer']))])
+        
+        # Add workload profile
+        if 'workload_profile' in attack_params:
+            profile = int(attack_params['workload_profile'])
+            if 1 <= profile <= 4:
+                cmd.extend(['-w', str(profile)])
         
         return cmd
